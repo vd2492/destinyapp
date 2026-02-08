@@ -88,15 +88,24 @@ fun HomeScreen(
             StatsCardsRow(
                 dueCount = state.dueCount,
                 totalHabitsCount = state.totalHabitsCount,
-                progressPercent = state.progressPercent
+                progressPercent = state.progressPercent,
+                showAllCompletedState = state.showAllCompletedState
             )
             Spacer(modifier = Modifier.height(28.dp))
-            TodaysHabitsSection(
-                habits = state.habits,
-                onHabitToggle = viewModel::toggleHabit,
-                onViewAllClick = onNavigateToHabits
-            )
-            Spacer(modifier = Modifier.height(28.dp))
+            if (!state.showAllCompletedState) {
+                TodaysHabitsSection(
+                    habits = state.habits,
+                    onHabitToggle = viewModel::toggleHabit,
+                    onViewAllClick = onNavigateToHabits
+                )
+                Spacer(modifier = Modifier.height(28.dp))
+            } else {
+                AllCompletedAlert(
+                    countdownSeconds = state.undoCountdownSeconds,
+                    onUndoAll = viewModel::undoAllHabitsToday
+                )
+                Spacer(modifier = Modifier.height(28.dp))
+            }
             DueRevisionsHeader()
             Spacer(modifier = Modifier.height(12.dp))
             RevisionCard(
@@ -159,7 +168,8 @@ private fun GreetingSection() {
 private fun StatsCardsRow(
     dueCount: Int,
     totalHabitsCount: Int,
-    progressPercent: Int
+    progressPercent: Int,
+    showAllCompletedState: Boolean = false
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -181,7 +191,8 @@ private fun StatsCardsRow(
         )
         ProgressStatCard(
             modifier = Modifier.weight(1f),
-            percent = progressPercent
+            percent = progressPercent,
+            showGreenTick = showAllCompletedState
         )
     }
 }
@@ -228,8 +239,15 @@ private fun StatCard(
 @Composable
 private fun ProgressStatCard(
     modifier: Modifier = Modifier,
-    percent: Int
+    percent: Int,
+    showGreenTick: Boolean = false
 ) {
+    val isFullGreen = percent == 100 && !showGreenTick
+    val progressColor = when {
+        showGreenTick -> DestinyCompletedGreen
+        isFullGreen -> DestinyCompletedGreen
+        else -> DestinyAccentBlue
+    }
     Surface(
         modifier = modifier.height(96.dp),
         shape = RoundedCornerShape(16.dp),
@@ -252,20 +270,75 @@ private fun ProgressStatCard(
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
                 drawArc(
-                    color = DestinyAccentBlue,
+                    color = progressColor,
                     startAngle = 90f,
                     sweepAngle = -sweepAngle,
                     useCenter = false,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             }
+            if (showGreenTick) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = DestinyCompletedGreen
+                )
+            } else {
+                Text(
+                    text = "$percent%",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = progressColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AllCompletedAlert(
+    countdownSeconds: Int,
+    onUndoAll: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "$percent%",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = DestinyAccentBlue
+                text = "All habits for today are completed!",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
             )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (countdownSeconds >= 0) {
+                    Text(
+                        text = "${countdownSeconds}s",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = "Undo all",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = DestinyAccentBlue,
+                    modifier = Modifier.clickable(onClick = onUndoAll)
+                )
+            }
         }
     }
 }
