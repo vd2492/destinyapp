@@ -148,9 +148,18 @@ fun HomeScreen(
 
 @Composable
 private fun GreetingSection() {
+    val calendar = java.util.Calendar.getInstance()
+    val greeting = when (calendar.get(java.util.Calendar.HOUR_OF_DAY)) {
+        in 0..11 -> "Good Morning"
+        in 12..16 -> "Good Afternoon"
+        else -> "Good Evening"
+    }
+    val dateFormat = java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.getDefault())
+    val formattedDate = dateFormat.format(calendar.time)
+
     Column {
         Text(
-            text = "Good Afternoon",
+            text = greeting,
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp
@@ -159,7 +168,7 @@ private fun GreetingSection() {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Saturday, Feb 7",
+            text = formattedDate,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
