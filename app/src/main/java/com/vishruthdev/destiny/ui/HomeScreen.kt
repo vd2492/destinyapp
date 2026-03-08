@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -362,22 +364,47 @@ private fun TodaysHabitsSection(
                 ),
                 color = MaterialTheme.colorScheme.onBackground
             )
-            Text(
-                text = "View All >",
-                style = MaterialTheme.typography.labelLarge,
-                color = DestinyAccentBlue,
-                modifier = Modifier.clickable(onClick = onViewAllClick)
-            )
+            if (habits.isNotEmpty()) {
+                Text(
+                    text = "View All >",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = DestinyAccentBlue,
+                    modifier = Modifier.clickable(onClick = onViewAllClick)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        habits.forEachIndexed { index, habit ->
-            HabitRow(
-                label = habit.label,
-                checked = habit.completed,
-                onClick = { onHabitToggle(habit.id) }
-            )
-            if (index < habits.lastIndex) {
-                Spacer(modifier = Modifier.height(12.dp))
+        if (habits.isEmpty()) {
+            OutlinedButton(
+                onClick = onViewAllClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = DestinyAccentBlue
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Add Habit",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = DestinyAccentBlue
+                )
+            }
+        } else {
+            habits.forEachIndexed { index, habit ->
+                HabitRow(
+                    label = habit.label,
+                    checked = habit.completed,
+                    onClick = { onHabitToggle(habit.id) }
+                )
+                if (index < habits.lastIndex) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
             }
         }
     }

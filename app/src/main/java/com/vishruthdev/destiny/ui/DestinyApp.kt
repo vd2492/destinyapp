@@ -25,6 +25,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.vishruthdev.destiny.data.AuthRepository
 import com.vishruthdev.destiny.DestinyApplication
 import com.vishruthdev.destiny.navigation.Routes
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
@@ -37,7 +38,9 @@ import androidx.navigation.NavController
 @Composable
 fun DestinyApp(
     darkTheme: Boolean = true,
-    onThemeToggle: () -> Unit = {}
+    onThemeToggle: () -> Unit = {},
+    authRepository: AuthRepository? = null,
+    onGoogleSignOut: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as DestinyApplication
@@ -84,7 +87,13 @@ fun DestinyApp(
                 PlaceholderScreen(title = "Revisions")
             }
             composable(Routes.Settings) {
-                PlaceholderScreen(title = "Settings")
+                SettingsScreen(
+                    authRepository = authRepository,
+                    onLogout = {
+                        authRepository?.logout()
+                        onGoogleSignOut()
+                    }
+                )
             }
         }
     }

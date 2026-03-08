@@ -104,6 +104,11 @@ class HabitRepository(private val habitDao: HabitDao) {
         habitDao.deleteCompletionsForHabit(habitId)
         habitDao.deleteHabit(habitId)
     }
+
+    suspend fun clearAll() {
+        habitDao.deleteAllCompletions()
+        habitDao.deleteAllHabits()
+    }
 }
 
 data class HabitWithCompletion(

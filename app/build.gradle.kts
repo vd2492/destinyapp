@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.navigation.compose)
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
