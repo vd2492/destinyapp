@@ -3,6 +3,8 @@ package com.vishruthdev.destiny.data
 import com.vishruthdev.destiny.data.local.HabitCompletionEntity
 import com.vishruthdev.destiny.data.local.HabitDao
 import com.vishruthdev.destiny.data.local.HabitEntity
+import com.vishruthdev.destiny.data.local.RevisionCompletionEntity
+import com.vishruthdev.destiny.data.local.RevisionTopicEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
@@ -23,6 +25,7 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     private val oneDayMillis = 24 * 60 * 60 * 1000L
     private val thirtyDaysMillis = 30 * oneDayMillis
+    private val revisionScheduleDays = listOf(1, 2, 4, 7)
 
     /** All habits with today's completion status for the home screen. */
     fun getTodayHabitsWithCompletion(): Flow<List<HabitWithCompletion>> {
@@ -105,7 +108,127 @@ class HabitRepository(private val habitDao: HabitDao) {
         habitDao.deleteHabit(habitId)
     }
 
+    fun getRevisionTopicsWithProgress(): Flow<List<RevisionTopicWithProgress>> {
+        return combine(
+            habitDao.getAllRevisionTopics(),
+            habitDao.getAllRevisionCompletions()
+        ) { topics, completions ->
+            val completionsByTopic = completions.groupBy { it.topicId }
+            val now = Calendar.getInstance().timeInMillis
+            topics.map { topic ->
+                val completedDays = completionsByTopic[topic.id].orEmpty()
+                    .map { it.revisionDay }
+                    .toSet()
+                val dayStates = buildRevisionDayStates(
+                    startDateMillis = topic.startDateMillis,
+                    revisionHour = topic.revisionHour,
+                    revisionMinute = topic.revisionMinute,
+                    completedDays = completedDays,
+                    nowMillis = now
+                )
+                RevisionTopicWithProgress(
+                    id = topic.id,
+                    name = topic.name,
+                    dayStates = dayStates,
+                    startDateMillis = topic.startDateMillis,
+                    revisionHour = topic.revisionHour,
+                    revisionMinute = topic.revisionMinute
+                )
+            }
+        }
+    }
+
+    private fun buildRevisionDayStates(
+        startDateMillis: Long,
+        revisionHour: Int,
+        revisionMinute: Int,
+        completedDays: Set<Int>,
+        nowMillis: Long
+    ): List<RevisionDayProgress> {
+        return revisionScheduleDays.map { day ->
+            val previousDays = revisionScheduleDays.takeWhile { it < day }
+            val dueDateMillis = calculateRevisionDueAt(
+                startDateMillis = startDateMillis,
+                revisionHour = revisionHour,
+                revisionMinute = revisionMinute,
+                revisionDay = day
+            )
+            val state = when {
+                completedDays.contains(day) -> RevisionDayState.Completed
+                previousDays.any { it !in completedDays } -> RevisionDayState.Locked
+                nowMillis >= dueDateMillis -> RevisionDayState.Active
+                else -> RevisionDayState.Locked
+            }
+            RevisionDayProgress(day = day, state = state)
+        }
+    }
+
+    private fun calculateRevisionDueAt(
+        startDateMillis: Long,
+        revisionHour: Int,
+        revisionMinute: Int,
+        revisionDay: Int
+    ): Long {
+        val dayOffsetMillis = (revisionDay - 1).coerceAtLeast(0) * oneDayMillis
+        val timeOffsetMillis = ((revisionHour * 60L) + revisionMinute) * 60 * 1000L
+        return startDateMillis + dayOffsetMillis + timeOffsetMillis
+    }
+
+    suspend fun addRevisionTopic(
+        name: String,
+        startDateMillis: Long,
+        revisionHour: Int,
+        revisionMinute: Int
+    ): String {
+        val id = UUID.randomUUID().toString()
+        val entity = RevisionTopicEntity(
+            id = id,
+            name = name,
+            createdAtMillis = Calendar.getInstance().timeInMillis,
+            startDateMillis = startDateMillis,
+            revisionHour = revisionHour.coerceIn(0, 23),
+            revisionMinute = revisionMinute.coerceIn(0, 59)
+        )
+        habitDao.insertRevisionTopic(entity)
+        return id
+    }
+
+    suspend fun completeActiveRevision(topicId: String): Int? {
+        val topic = habitDao.getRevisionTopicById(topicId) ?: return null
+        val completedDays = habitDao.getCompletedRevisionDaysForTopic(topicId).toSet()
+        val now = Calendar.getInstance().timeInMillis
+
+        val nextActiveDay = revisionScheduleDays.firstOrNull { day ->
+            val previousDays = revisionScheduleDays.takeWhile { it < day }
+            val dueDateMillis = calculateRevisionDueAt(
+                startDateMillis = topic.startDateMillis,
+                revisionHour = topic.revisionHour,
+                revisionMinute = topic.revisionMinute,
+                revisionDay = day
+            )
+            day !in completedDays &&
+                previousDays.all { it in completedDays } &&
+                now >= dueDateMillis
+        } ?: return null
+
+        habitDao.insertRevisionCompletion(
+            RevisionCompletionEntity(
+                topicId = topicId,
+                revisionDay = nextActiveDay,
+                completedAtMillis = Calendar.getInstance().timeInMillis
+            )
+        )
+        return nextActiveDay
+    }
+
+    suspend fun deleteRevisionTopic(topicId: String) {
+        habitDao.deleteRevisionCompletionsForTopic(topicId)
+        habitDao.deleteRevisionTopic(topicId)
+    }
+
     suspend fun clearAll() {
+        habitDao.deleteAllRevisionCompletions()
+        habitDao.deleteAllRevisionTopics()
         habitDao.deleteAllCompletions()
         habitDao.deleteAllHabits()
     }
@@ -123,3 +246,26 @@ data class HabitWithStats(
     val streakDays: Int,
     val completionRatePercent: Int
 )
+
+enum class RevisionDayState {
+    Completed,
+    Active,
+    Locked
+}
+
+data class RevisionDayProgress(
+    val day: Int,
+    val state: RevisionDayState
+)
+
+data class RevisionTopicWithProgress(
+    val id: String,
+    val name: String,
+    val dayStates: List<RevisionDayProgress>,
+    val startDateMillis: Long,
+    val revisionHour: Int,
+    val revisionMinute: Int
+) {
+    val activeDay: Int?
+        get() = dayStates.firstOrNull { it.state == RevisionDayState.Active }?.day
+}

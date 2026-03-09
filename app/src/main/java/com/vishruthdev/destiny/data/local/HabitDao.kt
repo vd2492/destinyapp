@@ -69,4 +69,34 @@ interface HabitDao {
 
     @Query("DELETE FROM habit_completions")
     suspend fun deleteAllCompletions()
+
+    @Query("SELECT * FROM revision_topics ORDER BY createdAtMillis ASC")
+    fun getAllRevisionTopics(): Flow<List<RevisionTopicEntity>>
+
+    @Query("SELECT * FROM revision_completions")
+    fun getAllRevisionCompletions(): Flow<List<RevisionCompletionEntity>>
+
+    @Query("SELECT * FROM revision_topics WHERE id = :topicId LIMIT 1")
+    suspend fun getRevisionTopicById(topicId: String): RevisionTopicEntity?
+
+    @Query("SELECT revisionDay FROM revision_completions WHERE topicId = :topicId")
+    suspend fun getCompletedRevisionDaysForTopic(topicId: String): List<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRevisionTopic(topic: RevisionTopicEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertRevisionCompletion(completion: RevisionCompletionEntity)
+
+    @Query("DELETE FROM revision_completions WHERE topicId = :topicId")
+    suspend fun deleteRevisionCompletionsForTopic(topicId: String)
+
+    @Query("DELETE FROM revision_topics WHERE id = :topicId")
+    suspend fun deleteRevisionTopic(topicId: String)
+
+    @Query("DELETE FROM revision_topics")
+    suspend fun deleteAllRevisionTopics()
+
+    @Query("DELETE FROM revision_completions")
+    suspend fun deleteAllRevisionCompletions()
 }

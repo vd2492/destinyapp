@@ -3,6 +3,7 @@ package com.vishruthdev.destiny.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,10 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,17 +36,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vishruthdev.destiny.data.RevisionDayState
+import com.vishruthdev.destiny.data.RevisionTopicWithProgress
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
-import com.vishruthdev.destiny.viewmodel.HabitUiState
-import com.vishruthdev.destiny.viewmodel.HomeViewModel
 import com.vishruthdev.destiny.ui.theme.DestinyCompletedGreen
 import com.vishruthdev.destiny.ui.theme.DestinyLockedGrey
+import com.vishruthdev.destiny.viewmodel.HabitUiState
+import com.vishruthdev.destiny.viewmodel.HomeViewModel
 
 @Composable
 fun HomeScreen(
@@ -58,6 +56,7 @@ fun HomeScreen(
     darkTheme: Boolean = true,
     onThemeToggle: () -> Unit = {},
     onNavigateToHabits: () -> Unit = {},
+    onNavigateToRevisions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
@@ -69,81 +68,56 @@ fun HomeScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                GreetingSection()
-                Switch(
-                    checked = !darkTheme,
-                    onCheckedChange = { onThemeToggle() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MaterialTheme.colorScheme.primary,
-                        checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f),
-                        uncheckedThumbColor = MaterialTheme.colorScheme.surface,
-                        uncheckedTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GreetingSection()
+            Switch(
+                checked = !darkTheme,
+                onCheckedChange = { onThemeToggle() },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                    checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f),
+                    uncheckedThumbColor = MaterialTheme.colorScheme.surface,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            StatsCardsRow(
-                dueCount = state.dueCount,
-                totalHabitsCount = state.totalHabitsCount,
-                progressPercent = state.progressPercent,
-                showAllCompletedState = state.showAllCompletedState
+            )
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        StatsCardsRow(
+            dueCount = state.dueCount,
+            totalHabitsCount = state.totalHabitsCount,
+            progressPercent = state.progressPercent,
+            showAllCompletedState = state.showAllCompletedState
+        )
+        Spacer(modifier = Modifier.height(28.dp))
+
+        if (!state.showAllCompletedState) {
+            TodaysHabitsSection(
+                habits = state.habits,
+                onHabitToggle = viewModel::toggleHabit,
+                onViewAllClick = onNavigateToHabits
             )
             Spacer(modifier = Modifier.height(28.dp))
-            if (!state.showAllCompletedState) {
-                TodaysHabitsSection(
-                    habits = state.habits,
-                    onHabitToggle = viewModel::toggleHabit,
-                    onViewAllClick = onNavigateToHabits
-                )
-                Spacer(modifier = Modifier.height(28.dp))
-            } else {
-                AllCompletedAlert(
-                    countdownSeconds = state.undoCountdownSeconds,
-                    onUndoAll = viewModel::undoAllHabitsToday
-                )
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-            DueRevisionsHeader()
-            Spacer(modifier = Modifier.height(12.dp))
-            RevisionCard(
-                title = "Binary Search Patterns",
-                category = "DSA",
-                dayStates = listOf(
-                    DayState.Completed,
-                    DayState.Completed,
-                    DayState.Active,
-                    DayState.Locked
-                )
+        } else {
+            AllCompletedAlert(
+                countdownSeconds = state.undoCountdownSeconds,
+                onUndoAll = viewModel::undoAllHabitsToday
             )
-            Spacer(modifier = Modifier.height(12.dp))
-            RevisionCard(
-                title = "Top 100 words set 1",
-                category = "Vocabulary",
-                dayStates = listOf(
-                    DayState.Completed,
-                    DayState.Active,
-                    DayState.Locked,
-                    DayState.Locked
-                )
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            RevisionCard(
-                title = "Load Balancing Strategies",
-                category = "System Design",
-                dayStates = listOf(
-                    DayState.Active,
-                    DayState.Locked,
-                    DayState.Locked,
-                    DayState.Locked
-                )
-            )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
         }
+
+        DueRevisionsSection(
+            dueRevisions = state.dueRevisions,
+            hasRevisionTopics = state.hasRevisionTopics,
+            onViewAllClick = onNavigateToRevisions,
+            onAddTopicClick = onNavigateToRevisions,
+            onCompleteRevision = viewModel::completeRevision
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+    }
 }
 
 @Composable
@@ -214,7 +188,7 @@ private fun StatCard(
     label: String,
     value: String,
     sublabel: String,
-    valueColor: androidx.compose.ui.graphics.Color
+    valueColor: Color
 ) {
     Surface(
         modifier = modifier.height(96.dp),
@@ -447,7 +421,7 @@ private fun HabitRow(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
-                    tint = androidx.compose.ui.graphics.Color.White
+                    tint = Color.White
                 )
             }
         }
@@ -460,7 +434,75 @@ private fun HabitRow(
 }
 
 @Composable
-private fun DueRevisionsHeader() {
+private fun DueRevisionsSection(
+    dueRevisions: List<RevisionTopicWithProgress>,
+    hasRevisionTopics: Boolean,
+    onViewAllClick: () -> Unit,
+    onAddTopicClick: () -> Unit,
+    onCompleteRevision: (String) -> Unit
+) {
+    Column {
+        DueRevisionsHeader(
+            showViewAll = hasRevisionTopics,
+            onViewAllClick = onViewAllClick
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        when {
+            !hasRevisionTopics -> {
+                OutlinedButton(
+                    onClick = onAddTopicClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = DestinyAccentBlue
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Add revision topic",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = DestinyAccentBlue
+                    )
+                }
+            }
+            dueRevisions.isEmpty() -> {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Text(
+                        text = "No revisions are due today.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+            else -> {
+                val visibleRevisions = dueRevisions.take(3)
+                visibleRevisions.forEachIndexed { index, topic ->
+                    RevisionCard(
+                        topic = topic,
+                        onMarkComplete = { onCompleteRevision(topic.id) }
+                    )
+                    if (index < visibleRevisions.lastIndex) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DueRevisionsHeader(
+    showViewAll: Boolean,
+    onViewAllClick: () -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -473,23 +515,22 @@ private fun DueRevisionsHeader() {
             ),
             color = MaterialTheme.colorScheme.onBackground
         )
-        Text(
-            text = "View All >",
-            style = MaterialTheme.typography.labelLarge,
-            color = DestinyAccentBlue
-        )
+        if (showViewAll) {
+            Text(
+                text = "View All >",
+                style = MaterialTheme.typography.labelLarge,
+                color = DestinyAccentBlue,
+                modifier = Modifier.clickable(onClick = onViewAllClick)
+            )
+        }
     }
 }
 
-private enum class DayState { Completed, Active, Locked }
-
 @Composable
 private fun RevisionCard(
-    title: String,
-    category: String,
-    dayStates: List<DayState>
+    topic: RevisionTopicWithProgress,
+    onMarkComplete: () -> Unit
 ) {
-    val days = listOf("Day 1", "Day 2", "Day 4", "Day 7")
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface
@@ -502,50 +543,55 @@ private fun RevisionCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = category,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = topic.name,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = DestinyAccentBlue.copy(alpha = 0.2f)
                 ) {
                     Text(
-                        text = "Due",
+                        text = "Due Day ${topic.activeDay}",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = DestinyAccentBlue
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                dayStates.forEachIndexed { index, state ->
+                topic.dayStates.forEachIndexed { index, day ->
                     if (index > 0) {
                         RevisionConnectorLine(
-                            fromCompleted = dayStates[index - 1] == DayState.Completed,
-                            toCompleted = state == DayState.Completed
+                            fromCompleted = topic.dayStates[index - 1].state == RevisionDayState.Completed,
+                            toCompleted = day.state == RevisionDayState.Completed
                         )
                     }
-                    RevisionDayNode(
-                        label = days[index],
-                        state = state
+                    RevisionDayNode(day = day.day, state = day.state)
+                }
+            }
+            topic.activeDay?.let { dueDay ->
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedButton(
+                    onClick = onMarkComplete,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Mark Day $dueDay done")
                 }
             }
         }
@@ -568,55 +614,52 @@ private fun RevisionConnectorLine(
 
 @Composable
 private fun RevisionDayNode(
-    label: String,
-    state: DayState
+    day: Int,
+    state: RevisionDayState
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val (backgroundColor, contentColor) = when (state) {
-            DayState.Completed -> DestinyCompletedGreen to androidx.compose.ui.graphics.Color.White
-            DayState.Active -> androidx.compose.ui.graphics.Color.Transparent to DestinyAccentBlue
-            DayState.Locked -> androidx.compose.ui.graphics.Color.Transparent to DestinyLockedGrey
+            RevisionDayState.Completed -> DestinyCompletedGreen to Color.White
+            RevisionDayState.Active -> Color.Transparent to DestinyAccentBlue
+            RevisionDayState.Locked -> Color.Transparent to DestinyLockedGrey
         }
         val borderColor = when (state) {
-            DayState.Completed -> DestinyCompletedGreen
-            DayState.Active -> DestinyAccentBlue
-            DayState.Locked -> DestinyLockedGrey
+            RevisionDayState.Completed -> DestinyCompletedGreen
+            RevisionDayState.Active -> DestinyAccentBlue
+            RevisionDayState.Locked -> DestinyLockedGrey
         }
+
         Box(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
                 .then(
-                    if (state == DayState.Completed) Modifier.background(backgroundColor)
+                    if (state == RevisionDayState.Completed) Modifier.background(backgroundColor)
                     else Modifier.border(2.dp, borderColor, CircleShape)
                 ),
             contentAlignment = Alignment.Center
         ) {
             when (state) {
-                DayState.Completed -> Icon(
+                RevisionDayState.Completed -> Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = contentColor
                 )
-                DayState.Locked -> Icon(
+                RevisionDayState.Locked -> Icon(
                     imageVector = Icons.Outlined.Lock,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
                     tint = contentColor
                 )
-                DayState.Active -> { /* empty circle */ }
+                RevisionDayState.Active -> Unit
             }
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = label,
+            text = "Day $day",
             style = MaterialTheme.typography.labelSmall,
-            color = when (state) {
-                DayState.Active -> DestinyAccentBlue
-                else -> MaterialTheme.colorScheme.onSurface
-            }
+            color = if (state == RevisionDayState.Active) DestinyAccentBlue else MaterialTheme.colorScheme.onSurface
         )
     }
 }
-

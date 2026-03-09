@@ -31,6 +31,7 @@ import com.vishruthdev.destiny.navigation.Routes
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import com.vishruthdev.destiny.viewmodel.HabitsViewModelFactory
 import com.vishruthdev.destiny.viewmodel.HomeViewModelFactory
+import com.vishruthdev.destiny.viewmodel.RevisionsViewModelFactory
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -74,6 +75,13 @@ fun DestinyApp(
                             restoreState = true
                         }
                     },
+                    onNavigateToRevisions = {
+                        navController.navigate(Routes.Revisions) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -84,7 +92,10 @@ fun DestinyApp(
                 )
             }
             composable(Routes.Revisions) {
-                PlaceholderScreen(title = "Revisions")
+                RevisionsScreen(
+                    viewModel = viewModel(factory = RevisionsViewModelFactory(repository)),
+                    modifier = Modifier.fillMaxSize()
+                )
             }
             composable(Routes.Settings) {
                 SettingsScreen(

@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vishruthdev.destiny.data.HabitRepository
-import com.vishruthdev.destiny.data.HabitWithCompletion
+import com.vishruthdev.destiny.data.RevisionTopicWithProgress
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +24,8 @@ data class HomeUiState(
     val dueCount: Int,
     val totalHabitsCount: Int,
     val progressPercent: Int,
+    val dueRevisions: List<RevisionTopicWithProgress> = emptyList(),
+    val hasRevisionTopics: Boolean = false,
     val showAllCompletedState: Boolean = false,
     val undoCountdownSeconds: Int = -1
 )
@@ -32,7 +34,14 @@ class HomeViewModel(
     private val repository: HabitRepository
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(HomeUiState(emptyList(), 0, 0, 0))
+    private val _state = MutableStateFlow(
+        HomeUiState(
+            habits = emptyList(),
+            dueCount = 0,
+            totalHabitsCount = 0,
+            progressPercent = 0
+        )
+    )
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     private var celebrationJob: Job? = null
@@ -44,7 +53,6 @@ class HomeViewModel(
                 val habits = withCompletion.map { h ->
                     HabitUiState(id = h.id, label = h.name, completed = h.completedToday)
                 }
-                val dueCount = habits.count { !it.completed }
                 val total = habits.size
                 val progressPercent = if (total == 0) 0 else (habits.count { it.completed }.toFloat() / total * 100).toInt()
                 val allCompleted = total > 0 && progressPercent == 100
@@ -64,9 +72,21 @@ class HomeViewModel(
                 _state.update {
                     it.copy(
                         habits = habits,
-                        dueCount = dueCount,
                         totalHabitsCount = total,
                         progressPercent = progressPercent
+                    )
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.getRevisionTopicsWithProgress().collect { topics ->
+                val dueRevisions = topics.filter { it.activeDay != null }
+                _state.update {
+                    it.copy(
+                        dueCount = dueRevisions.size,
+                        dueRevisions = dueRevisions,
+                        hasRevisionTopics = topics.isNotEmpty()
                     )
                 }
             }
@@ -99,6 +119,12 @@ class HomeViewModel(
                 repository.setCompletedToday(habit.id, false)
             }
             _state.update { it.copy(showAllCompletedState = false, undoCountdownSeconds = -1) }
+        }
+    }
+
+    fun completeRevision(topicId: String) {
+        viewModelScope.launch {
+            repository.completeActiveRevision(topicId)
         }
     }
 }

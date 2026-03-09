@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val app = LocalContext.current.applicationContext as DestinyApplication
-            val currentUser by app.authRepository.currentUser.collectAsState(initial = null)
+            val currentUser by app.authRepository.currentUser.collectAsState()
             var previousUser by remember { mutableStateOf(currentUser) }
             var darkTheme by remember { mutableStateOf(true) }
 
