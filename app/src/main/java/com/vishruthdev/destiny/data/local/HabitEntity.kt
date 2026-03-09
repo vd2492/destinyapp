@@ -7,7 +7,10 @@ import androidx.room.PrimaryKey
 data class HabitEntity(
     @PrimaryKey val id: String,
     val name: String,
-    val createdAtMillis: Long
+    val createdAtMillis: Long,
+    val startDateMillis: Long,
+    val startHour: Int,
+    val startMinute: Int
 )
 
 @Entity(tableName = "habit_completions", primaryKeys = ["habitId", "dateMillis"])

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [HabitEntity::class, HabitCompletionEntity::class, RevisionTopicEntity::class, RevisionCompletionEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -59,6 +59,22 @@ object DatabaseProvider {
             )
         }
     }
+    private val migration3To4 = object : Migration(3, 4) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "ALTER TABLE habits ADD COLUMN startDateMillis INTEGER NOT NULL DEFAULT 0"
+            )
+            database.execSQL(
+                "ALTER TABLE habits ADD COLUMN startHour INTEGER NOT NULL DEFAULT 0"
+            )
+            database.execSQL(
+                "ALTER TABLE habits ADD COLUMN startMinute INTEGER NOT NULL DEFAULT 0"
+            )
+            database.execSQL(
+                "UPDATE habits SET startDateMillis = createdAtMillis"
+            )
+        }
+    }
 
     fun get(context: Context): AppDatabase {
         return instance ?: synchronized(this) {
@@ -69,6 +85,7 @@ object DatabaseProvider {
             )
                 .addMigrations(migration1To2)
                 .addMigrations(migration2To3)
+                .addMigrations(migration3To4)
                 .build()
                 .also { instance = it }
         }

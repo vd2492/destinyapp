@@ -10,7 +10,9 @@ import kotlinx.coroutines.flow.Flow
 data class HabitWithTodayCompletionRow(
     val id: String,
     val name: String,
-    val completedToday: Int
+    val completedToday: Int,
+    val startHour: Int,
+    val startMinute: Int
 )
 
 @Dao
@@ -22,13 +24,15 @@ interface HabitDao {
     @Query(
         """
         SELECT h.id AS id, h.name AS name,
+        h.startHour AS startHour, h.startMinute AS startMinute,
         CASE WHEN c.dateMillis IS NOT NULL THEN 1 ELSE 0 END AS completedToday
         FROM habits h
         LEFT JOIN habit_completions c ON h.id = c.habitId AND c.dateMillis = :todayStartMillis
+        WHERE (h.startDateMillis + ((h.startHour * 60 + h.startMinute) * 60000)) <= :nowMillis
         ORDER BY h.createdAtMillis ASC
         """
     )
-    fun getHabitsWithTodayCompletion(todayStartMillis: Long): Flow<List<HabitWithTodayCompletionRow>>
+    fun getHabitsWithTodayCompletion(todayStartMillis: Long, nowMillis: Long): Flow<List<HabitWithTodayCompletionRow>>
 
     @Query("SELECT * FROM habits WHERE id = :habitId LIMIT 1")
     suspend fun getHabitById(habitId: String): HabitEntity?

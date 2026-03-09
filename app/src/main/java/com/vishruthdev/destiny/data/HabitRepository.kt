@@ -29,12 +29,17 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     /** All habits with today's completion status for the home screen. */
     fun getTodayHabitsWithCompletion(): Flow<List<HabitWithCompletion>> {
-        return habitDao.getHabitsWithTodayCompletion(todayStartMillis()).map { rows ->
+        return habitDao.getHabitsWithTodayCompletion(
+            todayStartMillis = todayStartMillis(),
+            nowMillis = Calendar.getInstance().timeInMillis
+        ).map { rows ->
             rows.map { row ->
                 HabitWithCompletion(
                     id = row.id,
                     name = row.name,
-                    completedToday = row.completedToday == 1
+                    completedToday = row.completedToday == 1,
+                    startHour = row.startHour,
+                    startMinute = row.startMinute
                 )
             }
         }
@@ -51,15 +56,18 @@ class HabitRepository(private val habitDao: HabitDao) {
                 val streak = computeStreak(completionDates, todayStartMillis())
                 val count = habitDao.getCompletionCountInRange(
                     habit.id,
-                    habit.createdAtMillis,
-                    habit.createdAtMillis + thirtyDaysMillis
+                    habit.startDateMillis,
+                    habit.startDateMillis + thirtyDaysMillis
                 )
                 val completionRate = ((count.toFloat() / 30) * 100).toInt().coerceIn(0, 100)
                 HabitWithStats(
                     id = habit.id,
                     name = habit.name,
                     streakDays = streak,
-                    completionRatePercent = completionRate
+                    completionRatePercent = completionRate,
+                    startDateMillis = habit.startDateMillis,
+                    startHour = habit.startHour,
+                    startMinute = habit.startMinute
                 )
             }
             emit(withStats)
@@ -92,12 +100,20 @@ class HabitRepository(private val habitDao: HabitDao) {
         }
     }
 
-    suspend fun addHabit(name: String): String {
+    suspend fun addHabit(
+        name: String,
+        startDateMillis: Long,
+        startHour: Int,
+        startMinute: Int
+    ): String {
         val id = UUID.randomUUID().toString()
         val entity = HabitEntity(
             id = id,
             name = name,
-            createdAtMillis = todayStartMillis()
+            createdAtMillis = Calendar.getInstance().timeInMillis,
+            startDateMillis = startDateMillis,
+            startHour = startHour.coerceIn(0, 23),
+            startMinute = startMinute.coerceIn(0, 59)
         )
         habitDao.insertHabit(entity)
         return id
@@ -237,14 +253,19 @@ class HabitRepository(private val habitDao: HabitDao) {
 data class HabitWithCompletion(
     val id: String,
     val name: String,
-    val completedToday: Boolean
+    val completedToday: Boolean,
+    val startHour: Int,
+    val startMinute: Int
 )
 
 data class HabitWithStats(
     val id: String,
     val name: String,
     val streakDays: Int,
-    val completionRatePercent: Int
+    val completionRatePercent: Int,
+    val startDateMillis: Long,
+    val startHour: Int,
+    val startMinute: Int
 )
 
 enum class RevisionDayState {

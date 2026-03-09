@@ -383,6 +383,7 @@ private fun TodaysHabitsSection(
                 HabitRow(
                     label = habit.label,
                     checked = habit.completed,
+                    timeLabel = formatTime(habit.startHour, habit.startMinute),
                     onClick = { onHabitToggle(habit.id) }
                 )
                 if (index < habits.lastIndex) {
@@ -397,6 +398,7 @@ private fun TodaysHabitsSection(
 private fun HabitRow(
     label: String,
     checked: Boolean,
+    timeLabel: String,
     onClick: () -> Unit = {}
 ) {
     Row(
@@ -429,6 +431,12 @@ private fun HabitRow(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = timeLabel,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -662,4 +670,13 @@ private fun RevisionDayNode(
             color = if (state == RevisionDayState.Active) DestinyAccentBlue else MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+private fun formatTime(hour: Int, minute: Int): String {
+    val calendar = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))
+        set(java.util.Calendar.MINUTE, minute.coerceIn(0, 59))
+    }
+    val formatter = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+    return formatter.format(calendar.time)
 }

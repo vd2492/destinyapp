@@ -16,7 +16,9 @@ import kotlinx.coroutines.launch
 data class HabitUiState(
     val id: String,
     val label: String,
-    val completed: Boolean
+    val completed: Boolean,
+    val startHour: Int,
+    val startMinute: Int
 )
 
 data class HomeUiState(
@@ -51,7 +53,13 @@ class HomeViewModel(
         viewModelScope.launch {
             repository.getTodayHabitsWithCompletion().collect { withCompletion ->
                 val habits = withCompletion.map { h ->
-                    HabitUiState(id = h.id, label = h.name, completed = h.completedToday)
+                    HabitUiState(
+                        id = h.id,
+                        label = h.name,
+                        completed = h.completedToday,
+                        startHour = h.startHour,
+                        startMinute = h.startMinute
+                    )
                 }
                 val total = habits.size
                 val progressPercent = if (total == 0) 0 else (habits.count { it.completed }.toFloat() / total * 100).toInt()
