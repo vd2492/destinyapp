@@ -7,8 +7,6 @@ import com.vishruthdev.destiny.data.local.RevisionCompletionEntity
 import com.vishruthdev.destiny.data.local.RevisionTopicEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import java.util.Calendar
 import java.util.UUID
 
@@ -29,37 +27,75 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     /** All habits with today's completion status for the home screen. */
     fun getTodayHabitsWithCompletion(): Flow<List<HabitWithCompletion>> {
-        return habitDao.getHabitsWithTodayCompletion(
-            todayStartMillis = todayStartMillis(),
-            nowMillis = Calendar.getInstance().timeInMillis
-        ).map { rows ->
-            rows.map { row ->
-                HabitWithCompletion(
-                    id = row.id,
-                    name = row.name,
-                    completedToday = row.completedToday == 1,
-                    startHour = row.startHour,
-                    startMinute = row.startMinute
-                )
-            }
+        return combine(
+            habitDao.getAllHabits(),
+            habitDao.getAllHabitCompletions()
+        ) { habits, completions ->
+            val now = Calendar.getInstance().timeInMillis
+            val todayStart = todayStartMillis(now)
+            val completionDatesByHabit = completions
+                .groupBy { it.habitId }
+                .mapValues { (_, entries) -> entries.map { it.dateMillis }.toSet() }
+
+            habits
+                .filter { habit ->
+                    habit.startDateMillis <= todayStart &&
+                        now >= calculateHabitDueAt(todayStart, habit.startHour, habit.startMinute)
+                }
+                .map { habit ->
+                    val completionDates = completionDatesByHabit[habit.id].orEmpty()
+                    val history = calculateHabitHistory(
+                        startDateMillis = habit.startDateMillis,
+                        completionDates = completionDates,
+                        nowMillis = now
+                    )
+
+                    HabitWithCompletion(
+                        id = habit.id,
+                        name = habit.name,
+                        completedToday = todayStart in completionDates,
+                        startHour = habit.startHour,
+                        startMinute = habit.startMinute,
+                        missedDaysCount = history.missedDaysCount,
+                        latestMissedDateMillis = history.latestMissedDateMillis
+                    )
+                }
         }
     }
 
     /** All habits with streak and 30-day completion rate for the Habits screen. */
-    fun getHabitsWithStats(): Flow<List<HabitWithStats>> = flow {
-        combine(
+    fun getHabitsWithStats(): Flow<List<HabitWithStats>> {
+        return combine(
             habitDao.getAllHabits(),
-            habitDao.getCompletionCountFlow()
-        ) { habits, _ -> habits }.collect { habits ->
-            val withStats = habits.map { habit ->
-                val completionDates = habitDao.getCompletionDatesForHabitOnce(habit.id)
-                val streak = computeStreak(completionDates, todayStartMillis())
-                val count = habitDao.getCompletionCountInRange(
-                    habit.id,
-                    habit.startDateMillis,
-                    habit.startDateMillis + thirtyDaysMillis
+            habitDao.getAllHabitCompletions()
+        ) { habits, completions ->
+            val now = Calendar.getInstance().timeInMillis
+            val completionDatesByHabit = completions
+                .groupBy { it.habitId }
+                .mapValues { (_, entries) -> entries.map { it.dateMillis }.toSet() }
+
+            habits.map { habit ->
+                val completionDates = completionDatesByHabit[habit.id].orEmpty()
+                val streak = computeHabitStreak(
+                    completionDates = completionDates,
+                    startDateMillis = habit.startDateMillis,
+                    latestExpectedDateMillis = latestExpectedHabitDate(
+                        startDateMillis = habit.startDateMillis,
+                        startHour = habit.startHour,
+                        startMinute = habit.startMinute,
+                        nowMillis = now
+                    )
                 )
-                val completionRate = ((count.toFloat() / 30) * 100).toInt().coerceIn(0, 100)
+                val trackedCompletions = completionDates.count { date ->
+                    date >= habit.startDateMillis && date < habit.startDateMillis + thirtyDaysMillis
+                }
+                val completionRate = ((trackedCompletions.toFloat() / 30) * 100).toInt().coerceIn(0, 100)
+                val history = calculateHabitHistory(
+                    startDateMillis = habit.startDateMillis,
+                    completionDates = completionDates,
+                    nowMillis = now
+                )
+
                 HabitWithStats(
                     id = habit.id,
                     name = habit.name,
@@ -67,27 +103,28 @@ class HabitRepository(private val habitDao: HabitDao) {
                     completionRatePercent = completionRate,
                     startDateMillis = habit.startDateMillis,
                     startHour = habit.startHour,
-                    startMinute = habit.startMinute
+                    startMinute = habit.startMinute,
+                    missedDaysCount = history.missedDaysCount,
+                    latestMissedDateMillis = history.latestMissedDateMillis
                 )
             }
-            emit(withStats)
         }
     }
 
-    private fun computeStreak(completionDatesDesc: List<Long>, todayStart: Long): Int {
-        if (completionDatesDesc.isEmpty()) return 0
-        val sorted = completionDatesDesc.sortedDescending()
+    private fun computeHabitStreak(
+        completionDates: Set<Long>,
+        startDateMillis: Long,
+        latestExpectedDateMillis: Long?
+    ): Int {
+        val expectedDate = latestExpectedDateMillis ?: return 0
         var streak = 0
-        var expectedDay = todayStart
-        for (date in sorted) {
-            if (date == expectedDay) {
-                streak++
-                expectedDay -= oneDayMillis
-            } else if (date < expectedDay) {
-                break
-            }
-            // if date > expectedDay, we're past a gap, stop
+        var currentDay = expectedDate
+
+        while (currentDay >= startDateMillis && currentDay in completionDates) {
+            streak++
+            currentDay -= oneDayMillis
         }
+
         return streak
     }
 
@@ -169,14 +206,83 @@ class HabitRepository(private val habitDao: HabitDao) {
                 revisionMinute = revisionMinute,
                 revisionDay = day
             )
+            val overdueAtMillis = todayStartMillis(dueDateMillis) + oneDayMillis
             val state = when {
                 completedDays.contains(day) -> RevisionDayState.Completed
                 previousDays.any { it !in completedDays } -> RevisionDayState.Locked
+                nowMillis >= overdueAtMillis -> RevisionDayState.Overdue
                 nowMillis >= dueDateMillis -> RevisionDayState.Active
                 else -> RevisionDayState.Locked
             }
             RevisionDayProgress(day = day, state = state)
         }
+    }
+
+    private fun calculateHabitHistory(
+        startDateMillis: Long,
+        completionDates: Set<Long>,
+        nowMillis: Long
+    ): HabitHistory {
+        val todayStart = todayStartMillis(nowMillis)
+        val lastCompletedDayThatCanBeMissed = todayStart - oneDayMillis
+        if (lastCompletedDayThatCanBeMissed < startDateMillis) {
+            return HabitHistory()
+        }
+
+        var currentDay = startDateMillis
+        var missedDaysCount = 0
+        var latestMissedDateMillis: Long? = null
+
+        while (currentDay <= lastCompletedDayThatCanBeMissed) {
+            if (currentDay !in completionDates) {
+                missedDaysCount++
+                latestMissedDateMillis = currentDay
+            }
+            currentDay += oneDayMillis
+        }
+
+        return HabitHistory(
+            missedDaysCount = missedDaysCount,
+            latestMissedDateMillis = latestMissedDateMillis
+        )
+    }
+
+    private fun latestExpectedHabitDate(
+        startDateMillis: Long,
+        startHour: Int,
+        startMinute: Int,
+        nowMillis: Long
+    ): Long? {
+        val todayStart = todayStartMillis(nowMillis)
+        if (todayStart < startDateMillis) return null
+
+        val todayDueAtMillis = calculateHabitDueAt(todayStart, startHour, startMinute)
+        val latestExpectedDay = if (nowMillis >= todayDueAtMillis) {
+            todayStart
+        } else {
+            todayStart - oneDayMillis
+        }
+
+        return latestExpectedDay.takeIf { it >= startDateMillis }
+    }
+
+    private fun calculateHabitDueAt(
+        dayStartMillis: Long,
+        startHour: Int,
+        startMinute: Int
+    ): Long {
+        val timeOffsetMillis = ((startHour * 60L) + startMinute) * 60 * 1000L
+        return dayStartMillis + timeOffsetMillis
+    }
+
+    private fun todayStartMillis(timeMillis: Long): Long {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = timeMillis
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     private fun calculateRevisionDueAt(
@@ -237,6 +343,17 @@ class HabitRepository(private val habitDao: HabitDao) {
         return nextActiveDay
     }
 
+    suspend fun resetRevisionTopicFromToday(topicId: String): Boolean {
+        val topic = habitDao.getRevisionTopicById(topicId) ?: return false
+        habitDao.deleteRevisionCompletionsForTopic(topicId)
+        habitDao.insertRevisionTopic(
+            topic.copy(
+                startDateMillis = todayStartMillis()
+            )
+        )
+        return true
+    }
+
     suspend fun deleteRevisionTopic(topicId: String) {
         habitDao.deleteRevisionCompletionsForTopic(topicId)
         habitDao.deleteRevisionTopic(topicId)
@@ -255,7 +372,9 @@ data class HabitWithCompletion(
     val name: String,
     val completedToday: Boolean,
     val startHour: Int,
-    val startMinute: Int
+    val startMinute: Int,
+    val missedDaysCount: Int = 0,
+    val latestMissedDateMillis: Long? = null
 )
 
 data class HabitWithStats(
@@ -265,12 +384,15 @@ data class HabitWithStats(
     val completionRatePercent: Int,
     val startDateMillis: Long,
     val startHour: Int,
-    val startMinute: Int
+    val startMinute: Int,
+    val missedDaysCount: Int = 0,
+    val latestMissedDateMillis: Long? = null
 )
 
 enum class RevisionDayState {
     Completed,
     Active,
+    Overdue,
     Locked
 }
 
@@ -289,4 +411,21 @@ data class RevisionTopicWithProgress(
 ) {
     val activeDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.Active }?.day
+
+    val overdueDay: Int?
+        get() = dayStates.firstOrNull { it.state == RevisionDayState.Overdue }?.day
+
+    val actionableDay: Int?
+        get() = overdueDay ?: activeDay
+
+    val requiresAttention: Boolean
+        get() = actionableDay != null
+
+    val isCompleted: Boolean
+        get() = dayStates.all { it.state == RevisionDayState.Completed }
 }
+
+private data class HabitHistory(
+    val missedDaysCount: Int = 0,
+    val latestMissedDateMillis: Long? = null
+)

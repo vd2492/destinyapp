@@ -18,7 +18,9 @@ data class HabitUiState(
     val label: String,
     val completed: Boolean,
     val startHour: Int,
-    val startMinute: Int
+    val startMinute: Int,
+    val missedDaysCount: Int,
+    val latestMissedDateMillis: Long?
 )
 
 data class HomeUiState(
@@ -58,7 +60,9 @@ class HomeViewModel(
                         label = h.name,
                         completed = h.completedToday,
                         startHour = h.startHour,
-                        startMinute = h.startMinute
+                        startMinute = h.startMinute,
+                        missedDaysCount = h.missedDaysCount,
+                        latestMissedDateMillis = h.latestMissedDateMillis
                     )
                 }
                 val total = habits.size
@@ -89,7 +93,12 @@ class HomeViewModel(
 
         viewModelScope.launch {
             repository.getRevisionTopicsWithProgress().collect { topics ->
-                val dueRevisions = topics.filter { it.activeDay != null }
+                val dueRevisions = topics
+                    .filter { it.requiresAttention }
+                    .sortedWith(
+                        compareByDescending<RevisionTopicWithProgress> { it.overdueDay != null }
+                            .thenByDescending { it.activeDay != null }
+                    )
                 _state.update {
                     it.copy(
                         dueCount = dueRevisions.size,
@@ -133,6 +142,12 @@ class HomeViewModel(
     fun completeRevision(topicId: String) {
         viewModelScope.launch {
             repository.completeActiveRevision(topicId)
+        }
+    }
+
+    fun resetRevisionFromToday(topicId: String) {
+        viewModelScope.launch {
+            repository.resetRevisionTopicFromToday(topicId)
         }
     }
 }

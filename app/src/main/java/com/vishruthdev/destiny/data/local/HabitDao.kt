@@ -21,6 +21,9 @@ interface HabitDao {
     @Query("SELECT * FROM habits ORDER BY createdAtMillis ASC")
     fun getAllHabits(): Flow<List<HabitEntity>>
 
+    @Query("SELECT * FROM habit_completions")
+    fun getAllHabitCompletions(): Flow<List<HabitCompletionEntity>>
+
     @Query(
         """
         SELECT h.id AS id, h.name AS name,

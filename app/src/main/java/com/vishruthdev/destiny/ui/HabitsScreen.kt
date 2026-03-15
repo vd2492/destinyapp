@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.vishruthdev.destiny.data.HabitWithStats
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import com.vishruthdev.destiny.ui.theme.DestinyCompletedGreen
+import com.vishruthdev.destiny.ui.theme.DestinyMissedRed
 import com.vishruthdev.destiny.viewmodel.HabitStartOption
 import com.vishruthdev.destiny.viewmodel.HabitsViewModel
 import java.text.SimpleDateFormat
@@ -107,6 +109,8 @@ fun HabitsScreen(
                     startDateMillis = habit.startDateMillis,
                     startHour = habit.startHour,
                     startMinute = habit.startMinute,
+                    missedDaysCount = habit.missedDaysCount,
+                    latestMissedDateMillis = habit.latestMissedDateMillis,
                     showDeleteButton = state.deleteMode,
                     onDelete = { viewModel.deleteHabit(habit.id) },
                     onLongPress = { viewModel.toggleDeleteMode() }
@@ -338,13 +342,17 @@ private fun HabitStatsCard(
     startDateMillis: Long,
     startHour: Int,
     startMinute: Int,
+    missedDaysCount: Int,
+    latestMissedDateMillis: Long?,
     showDeleteButton: Boolean,
     onDelete: () -> Unit,
     onLongPress: () -> Unit
 ) {
+    val isMissed = missedDaysCount > 0
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = if (isMissed) DestinyMissedRed.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+        border = if (isMissed) BorderStroke(1.dp, DestinyMissedRed.copy(alpha = 0.35f)) else null,
         modifier = Modifier.pointerInput(habitId) {
             detectTapGestures(onLongPress = { onLongPress() })
         }
@@ -396,6 +404,23 @@ private fun HabitStatsCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        formatMissedHabitLabel(
+                            missedDaysCount = missedDaysCount,
+                            latestMissedDateMillis = latestMissedDateMillis
+                        )?.let { status ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = DestinyMissedRed.copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    text = status,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = DestinyMissedRed
+                                )
+                            }
+                        }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -501,4 +526,18 @@ private fun formatTime(hour: Int, minute: Int): String {
     }
     val formatter = SimpleDateFormat("hh:mm a", Locale.getDefault())
     return formatter.format(calendar.time)
+}
+
+private fun formatMissedHabitLabel(
+    missedDaysCount: Int,
+    latestMissedDateMillis: Long?
+): String? {
+    if (missedDaysCount <= 0 || latestMissedDateMillis == null) return null
+
+    val yesterdayStart = dayStartMillis(System.currentTimeMillis()) - 24 * 60 * 60 * 1000L
+    return when {
+        latestMissedDateMillis == yesterdayStart && missedDaysCount == 1 -> "Missed yesterday"
+        missedDaysCount == 1 -> "Last missed ${formatDate(latestMissedDateMillis)}"
+        else -> "$missedDaysCount missed days"
+    }
 }
