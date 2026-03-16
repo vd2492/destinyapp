@@ -1,0 +1,84 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function validUserProfile(userId) {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'email',
+        'displayName',
+        'createdAtMillis',
+        'updatedAtMillis'
+      ]) &&
+      request.resource.data.uid == userId &&
+      request.resource.data.email is string &&
+      request.resource.data.displayName is string &&
+      request.resource.data.createdAtMillis is int &&
+      request.resource.data.updatedAtMillis is int;
+    }
+
+    function validHabit(habitId) {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'name',
+        'createdAtMillis',
+        'startDateMillis',
+        'startHour',
+        'startMinute',
+        'completionDates'
+      ]) &&
+      request.resource.data.id == habitId &&
+      request.resource.data.name is string &&
+      request.resource.data.createdAtMillis is int &&
+      request.resource.data.startDateMillis is int &&
+      request.resource.data.startHour is int &&
+      request.resource.data.startMinute is int &&
+      request.resource.data.completionDates is list;
+    }
+
+    function validRevisionTopic(topicId) {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'name',
+        'createdAtMillis',
+        'startDateMillis',
+        'revisionHour',
+        'revisionMinute',
+        'completedDays'
+      ]) &&
+      request.resource.data.id == topicId &&
+      request.resource.data.name is string &&
+      request.resource.data.createdAtMillis is int &&
+      request.resource.data.startDateMillis is int &&
+      request.resource.data.revisionHour is int &&
+      request.resource.data.revisionMinute is int &&
+      request.resource.data.completedDays is list;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validUserProfile(userId);
+      allow delete: if isOwner(userId);
+
+      match /habits/{habitId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validHabit(habitId);
+        allow delete: if isOwner(userId);
+      }
+
+      match /revisionTopics/{topicId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validRevisionTopic(topicId);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

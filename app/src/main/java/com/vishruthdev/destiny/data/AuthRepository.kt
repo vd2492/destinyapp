@@ -1,115 +1,210 @@
 package com.vishruthdev.destiny.data
 
 import android.content.Context
-import android.content.SharedPreferences
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.vishruthdev.destiny.FirebaseRuntimeConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Calendar
 
-/**
- * Simple local auth: register (username + optional email + password) and login
- * (identifier = email or username + password). No backend; stored in SharedPreferences.
- * Passwords are stored in plain text for demo only — use hashing in production.
- */
-class AuthRepository(context: Context) {
+class AuthRepository(
+    context: Context,
+    private val firebaseConfig: FirebaseRuntimeConfig,
+    private val firebaseAuth: FirebaseAuth?,
+    private val firestore: FirebaseFirestore?
+) {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val _currentUser = MutableStateFlow<String?>(prefs.getString(KEY_CURRENT_USER, null).takeIf { !it.isNullOrEmpty() })
+    private val appContext = context.applicationContext
+    private val credentialManager by lazy { CredentialManager.create(appContext) }
+
+    private val _currentUser = MutableStateFlow(firebaseAuth?.currentUser.toDisplayLabel())
     val currentUser: StateFlow<String?> = _currentUser.asStateFlow()
 
-    fun register(username: String, email: String?, password: String): Result<Unit> {
-        if (username.isBlank() || password.isBlank()) {
-            return Result.failure(IllegalArgumentException("Username and password are required"))
-        }
-        val users = loadUsers().toMutableList()
-        if (users.any { it.username.equals(username, ignoreCase = true) }) {
-            return Result.failure(IllegalArgumentException("Username already taken"))
-        }
-        if (!email.isNullOrBlank() && users.any { it.email?.equals(email, ignoreCase = true) == true }) {
-            return Result.failure(IllegalArgumentException("Email already registered"))
-        }
-        users.add(StoredUser(username = username.trim(), email = email?.trim()?.takeIf { it.isNotBlank() }, password = password, isGoogle = false))
-        saveUsers(users)
-        setCurrentUser(username.trim())
-        return Result.success(Unit)
+    val isConfigured: Boolean
+        get() = firebaseConfig.isBaseConfigured
+
+    val isGoogleSignInConfigured: Boolean
+        get() = firebaseConfig.isGoogleSignInConfigured
+
+    val googleWebClientId: String
+        get() = firebaseConfig.webClientId
+
+    private val authStateListener = FirebaseAuth.AuthStateListener { auth ->
+        _currentUser.value = auth.currentUser.toDisplayLabel()
     }
 
-    fun login(identifier: String, password: String): Result<Unit> {
-        if (identifier.isBlank() || password.isBlank()) {
-            return Result.failure(IllegalArgumentException("Email/username and password are required"))
-        }
-        val user = loadUsers().find { user ->
-            user.username.equals(identifier, ignoreCase = true) ||
-                user.email?.equals(identifier, ignoreCase = true) == true
-        }
-        return when {
-            user == null -> Result.failure(IllegalArgumentException("No account found with this email or username"))
-            user.password != password -> Result.failure(IllegalArgumentException("Incorrect password"))
-            else -> {
-                setCurrentUser(user.username)
-                Result.success(Unit)
-            }
-        }
+    init {
+        firebaseAuth?.addAuthStateListener(authStateListener)
     }
 
-    /**
-     * Sign in with Google: use email (and optional display name) as the account.
-     * Creates a local account if this Google email is new; otherwise reuses existing.
-     */
-    fun loginWithGoogle(email: String, displayName: String?): Result<Unit> {
-        if (email.isBlank()) {
+    suspend fun register(username: String, email: String, password: String): Result<Unit> {
+        val auth = firebaseAuth ?: return configurationFailure()
+        val db = firestore ?: return configurationFailure()
+        val displayName = username.trim()
+        val trimmedEmail = email.trim()
+
+        if (displayName.isBlank()) {
+            return Result.failure(IllegalArgumentException("Username is required"))
+        }
+        if (trimmedEmail.isBlank()) {
             return Result.failure(IllegalArgumentException("Email is required"))
         }
-        val users = loadUsers().toMutableList()
-        val existing = users.find { it.email.equals(email, ignoreCase = true) || it.username.equals(email, ignoreCase = true) }
-        val username = when {
-            existing != null -> existing.username
-            else -> {
-                val name = displayName?.trim()?.takeIf { it.isNotBlank() } ?: email
-                users.add(StoredUser(username = name, email = email.trim(), password = "", isGoogle = true))
-                saveUsers(users)
-                name
+        if (password.isBlank()) {
+            return Result.failure(IllegalArgumentException("Password is required"))
+        }
+
+        return runCatching {
+            val authResult = auth.createUserWithEmailAndPassword(trimmedEmail, password).awaitResult()
+            val user = authResult.user ?: error("Registration failed")
+            val profileUpdate = UserProfileChangeRequest.Builder()
+                .setDisplayName(displayName)
+                .build()
+            user.updateProfile(profileUpdate).awaitResult()
+            saveUserProfile(
+                firestore = db,
+                uid = user.uid,
+                email = user.email ?: trimmedEmail,
+                displayName = displayName
+            )
+            _currentUser.value = displayName
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { throwable ->
+                Result.failure(mapAuthException(throwable, "Registration failed"))
             }
-        }
-        setCurrentUser(username)
-        return Result.success(Unit)
+        )
     }
 
-    fun logout() {
-        prefs.edit().remove(KEY_CURRENT_USER).apply()
+    suspend fun login(email: String, password: String): Result<Unit> {
+        val auth = firebaseAuth ?: return configurationFailure()
+        val db = firestore ?: return configurationFailure()
+        val trimmedEmail = email.trim()
+
+        if (trimmedEmail.isBlank() || password.isBlank()) {
+            return Result.failure(IllegalArgumentException("Email and password are required"))
+        }
+
+        return runCatching {
+            val authResult = auth.signInWithEmailAndPassword(trimmedEmail, password).awaitResult()
+            val user = authResult.user ?: error("Login failed")
+            saveUserProfile(
+                firestore = db,
+                uid = user.uid,
+                email = user.email.orEmpty(),
+                displayName = user.toDisplayLabel().orEmpty()
+            )
+            _currentUser.value = user.toDisplayLabel()
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { throwable ->
+                Result.failure(mapAuthException(throwable, "Login failed"))
+            }
+        )
+    }
+
+    suspend fun loginWithGoogleIdToken(idToken: String): Result<Unit> {
+        val auth = firebaseAuth ?: return configurationFailure()
+        val db = firestore ?: return configurationFailure()
+
+        if (idToken.isBlank()) {
+            return Result.failure(IllegalArgumentException("Google ID token is required"))
+        }
+
+        return runCatching {
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
+            val authResult = auth.signInWithCredential(credential).awaitResult()
+            val user = authResult.user ?: error("Google sign-in failed")
+            saveUserProfile(
+                firestore = db,
+                uid = user.uid,
+                email = user.email.orEmpty(),
+                displayName = user.toDisplayLabel().orEmpty()
+            )
+            _currentUser.value = user.toDisplayLabel()
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { throwable ->
+                Result.failure(mapAuthException(throwable, "Google sign-in failed"))
+            }
+        )
+    }
+
+    suspend fun logout() {
+        firebaseAuth?.signOut()
         _currentUser.value = null
-    }
 
-    private fun setCurrentUser(username: String) {
-        prefs.edit().putString(KEY_CURRENT_USER, username).apply()
-        _currentUser.value = username
-    }
-
-    private fun loadUsers(): List<StoredUser> {
-        val raw = prefs.getString(KEY_USERS, null) ?: return emptyList()
-        return raw.split(DELIM).mapNotNull { part ->
-            val tokens = part.split(SUB_DELIM)
-            if (tokens.size >= 3) StoredUser(
-                username = tokens[0],
-                email = tokens[1].takeIf { it.isNotBlank() },
-                password = tokens[2],
-                isGoogle = tokens.getOrNull(3) == "1"
-            ) else null
+        runCatching {
+            credentialManager.clearCredentialState(ClearCredentialStateRequest())
         }
     }
 
-    private fun saveUsers(users: List<StoredUser>) {
-        val value = users.joinToString(DELIM) { "${it.username}$SUB_DELIM${it.email ?: ""}$SUB_DELIM${it.password}$SUB_DELIM${if (it.isGoogle) "1" else "0"}" }
-        prefs.edit().putString(KEY_USERS, value).apply()
+    private suspend fun saveUserProfile(
+        firestore: FirebaseFirestore,
+        uid: String,
+        email: String,
+        displayName: String
+    ) {
+        val now = Calendar.getInstance().timeInMillis
+        val userDocument = firestore.collection(USERS_COLLECTION).document(uid)
+        val existingSnapshot = userDocument.get().awaitResult()
+        val createdAtMillis = existingSnapshot.getLong("createdAtMillis") ?: now
+
+        userDocument.set(
+            UserProfileDocument(
+                uid = uid,
+                email = email,
+                displayName = displayName.ifBlank { email },
+                updatedAtMillis = now,
+                createdAtMillis = createdAtMillis
+            ),
+            SetOptions.merge()
+        ).awaitResult()
     }
 
-    private data class StoredUser(val username: String, val email: String?, val password: String, val isGoogle: Boolean = false)
+    private fun configurationFailure(): Result<Unit> {
+        return Result.failure(
+            IllegalStateException(
+                "Firebase is not configured. Add Firebase keys to local.properties first."
+            )
+        )
+    }
 
-    companion object {
-        private const val PREFS_NAME = "destiny_auth"
-        private const val KEY_CURRENT_USER = "current_user"
-        private const val KEY_USERS = "users"
-        private const val DELIM = ";"
-        private const val SUB_DELIM = "|"
+    private fun mapAuthException(throwable: Throwable, defaultMessage: String): Throwable {
+        return when (throwable) {
+            is FirebaseAuthUserCollisionException -> IllegalArgumentException("An account already exists with this email")
+            is FirebaseAuthWeakPasswordException -> IllegalArgumentException(throwable.localizedMessage ?: "Password is too weak")
+            is FirebaseAuthInvalidCredentialsException,
+            is FirebaseAuthInvalidUserException -> IllegalArgumentException("Incorrect email or password")
+            else -> IllegalArgumentException(throwable.localizedMessage ?: defaultMessage)
+        }
+    }
+
+    private fun com.google.firebase.auth.FirebaseUser?.toDisplayLabel(): String? {
+        val user = this ?: return null
+        return user.displayName?.takeIf { it.isNotBlank() }
+            ?: user.email?.takeIf { it.isNotBlank() }
+    }
+
+    private data class UserProfileDocument(
+        val uid: String = "",
+        val email: String = "",
+        val displayName: String = "",
+        val createdAtMillis: Long = 0L,
+        val updatedAtMillis: Long = 0L
+    )
+
+    private companion object {
+        const val USERS_COLLECTION = "users"
     }
 }

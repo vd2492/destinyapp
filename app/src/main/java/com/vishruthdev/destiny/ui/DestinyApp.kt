@@ -4,9 +4,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -35,19 +36,20 @@ import com.vishruthdev.destiny.viewmodel.RevisionsViewModelFactory
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import kotlinx.coroutines.launch
 
 @Composable
 fun DestinyApp(
     darkTheme: Boolean = true,
     onThemeToggle: () -> Unit = {},
-    authRepository: AuthRepository? = null,
-    onGoogleSignOut: () -> Unit = {}
+    authRepository: AuthRepository? = null
 ) {
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as DestinyApplication
     val repository = app.habitRepository
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -101,8 +103,12 @@ fun DestinyApp(
                 SettingsScreen(
                     authRepository = authRepository,
                     onLogout = {
-                        authRepository?.logout()
-                        onGoogleSignOut()
+                        val repositoryForLogout = authRepository
+                        if (repositoryForLogout != null) {
+                            scope.launch {
+                                repositoryForLogout.logout()
+                            }
+                        }
                     }
                 )
             }
@@ -140,7 +146,7 @@ private fun DestinyBottomNav(
     val items = listOf(
         BottomNavItem(Routes.Home, "Today", Icons.Filled.Home),
         BottomNavItem(Routes.Habits, "Habits", Icons.Filled.CheckCircle),
-        BottomNavItem(Routes.Revisions, "Revisions", Icons.Filled.MenuBook),
+        BottomNavItem(Routes.Revisions, "Revisions", Icons.AutoMirrored.Filled.MenuBook),
         BottomNavItem(Routes.Settings, "Settings", Icons.Filled.Settings)
     )
     NavigationBar(

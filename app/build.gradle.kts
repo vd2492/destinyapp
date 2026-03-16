@@ -1,8 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+
+fun localConfig(name: String): String {
+    return localProperties.getProperty(name, "")
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
 }
 
 android {
@@ -19,6 +34,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "FIREBASE_API_KEY", "\"${localConfig("firebase.apiKey")}\"")
+        buildConfigField("String", "FIREBASE_APP_ID", "\"${localConfig("firebase.appId")}\"")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${localConfig("firebase.projectId")}\"")
+        buildConfigField("String", "FIREBASE_STORAGE_BUCKET", "\"${localConfig("firebase.storageBucket")}\"")
+        buildConfigField("String", "FIREBASE_GCM_SENDER_ID", "\"${localConfig("firebase.gcmSenderId")}\"")
+        buildConfigField("String", "FIREBASE_WEB_CLIENT_ID", "\"${localConfig("firebase.webClientId")}\"")
     }
 
     buildTypes {
@@ -39,6 +61,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -54,7 +77,12 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.navigation.compose)
-    implementation("com.google.android.gms:play-services-auth:21.3.0")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)

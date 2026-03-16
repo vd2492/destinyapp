@@ -1,8 +1,6 @@
 package com.vishruthdev.destiny.ui
 
 import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,16 +46,27 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import androidx.credentials.Credential
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit = {},
-    authRegister: (username: String, email: String?, password: String) -> Result<Unit>,
-    authLogin: (identifier: String, password: String) -> Result<Unit>,
-    authLoginWithGoogle: (email: String, displayName: String?) -> Result<Unit> = { _, _ -> Result.failure(UnsupportedOperationException("Google Sign-In not configured")) },
+    firebaseConfigured: Boolean,
+    googleSignInConfigured: Boolean,
+    googleWebClientId: String,
+    authRegister: suspend (username: String, email: String, password: String) -> Result<Unit>,
+    authLogin: suspend (email: String, password: String) -> Result<Unit>,
+    authLoginWithGoogle: suspend (idToken: String) -> Result<Unit> = {
+        Result.failure(UnsupportedOperationException("Google Sign-In not configured"))
+    },
     modifier: Modifier = Modifier
 ) {
     var mode by remember { mutableStateOf(LoginMode.Login) }
@@ -64,48 +74,19 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var identifier by remember { mutableStateOf("") }
+    var loginEmail by remember { mutableStateOf("") }
     var loginPassword by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
     var loginPasswordVisible by remember { mutableStateOf(false) }
     var createPasswordVisible by remember { mutableStateOf(false) }
     var createConfirmPasswordVisible by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val activity = context as? Activity
-    val googleSignInClient = remember(context) {
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestProfile()
-            .build()
-        GoogleSignIn.getClient(context, gso)
-    }
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        errorMessage = null
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            task.addOnSuccessListener { account ->
-                val email = account.email
-                val displayName = account.displayName?.takeIf { it.isNotBlank() }
-                if (!email.isNullOrBlank()) {
-                    authLoginWithGoogle(email, displayName).fold(
-                        onSuccess = { onLoginSuccess() },
-                        onFailure = { errorMessage = it.message ?: "Google sign-in failed" }
-                    )
-                } else {
-                    errorMessage = "No email from Google account"
-                }
-            }
-            task.addOnFailureListener { e ->
-                errorMessage = e.message ?: "Google sign-in failed"
-            }
-        } else {
-            errorMessage = "Sign-in cancelled"
-        }
-    }
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -129,7 +110,16 @@ fun LoginScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        if (!firebaseConfigured) {
+            Text(
+                text = "Firebase is not configured yet. Add the Firebase values in local.properties before using login.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
 
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth()
@@ -188,19 +178,14 @@ fun LoginScreen(
         when (mode) {
             LoginMode.Login -> {
                 OutlinedTextField(
-                    value = identifier,
-                    onValueChange = { identifier = it },
-                    label = { Text("Email or username") },
+                    value = loginEmail,
+                    onValueChange = { loginEmail = it },
+                    label = { Text("Email") },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DestinyAccentBlue,
-                        focusedLabelColor = DestinyAccentBlue,
-                        cursorColor = DestinyAccentBlue,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -221,13 +206,7 @@ fun LoginScreen(
                             )
                         }
                     },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DestinyAccentBlue,
-                        focusedLabelColor = DestinyAccentBlue,
-                        cursorColor = DestinyAccentBlue,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(
@@ -235,20 +214,30 @@ fun LoginScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
+                        enabled = firebaseConfigured && !isSubmitting,
                         onClick = {
                             errorMessage = null
                             successMessage = null
-                            val result = authLogin(identifier.trim(), loginPassword)
-                            result.fold(
-                                onSuccess = { onLoginSuccess() },
-                                onFailure = { errorMessage = it.message ?: "Login failed" }
-                            )
+                            isSubmitting = true
+                            scope.launch {
+                                val result = authLogin(loginEmail.trim(), loginPassword)
+                                result.fold(
+                                    onSuccess = { onLoginSuccess() },
+                                    onFailure = { errorMessage = it.message ?: "Login failed" }
+                                )
+                                isSubmitting = false
+                            }
                         }
                     ) {
-                        Text("Login", color = DestinyAccentBlue, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = if (isSubmitting) "Logging in..." else "Login",
+                            color = DestinyAccentBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
+
             LoginMode.CreateAccount -> {
                 OutlinedTextField(
                     value = username,
@@ -257,30 +246,18 @@ fun LoginScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DestinyAccentBlue,
-                        focusedLabelColor = DestinyAccentBlue,
-                        cursorColor = DestinyAccentBlue,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Email (optional)") },
+                    label = { Text("Email") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DestinyAccentBlue,
-                        focusedLabelColor = DestinyAccentBlue,
-                        cursorColor = DestinyAccentBlue,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -301,13 +278,7 @@ fun LoginScreen(
                             )
                         }
                     },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DestinyAccentBlue,
-                        focusedLabelColor = DestinyAccentBlue,
-                        cursorColor = DestinyAccentBlue,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -328,13 +299,7 @@ fun LoginScreen(
                             )
                         }
                     },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DestinyAccentBlue,
-                        focusedLabelColor = DestinyAccentBlue,
-                        cursorColor = DestinyAccentBlue,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(
@@ -342,31 +307,37 @@ fun LoginScreen(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(
+                        enabled = firebaseConfigured && !isSubmitting,
                         onClick = {
                             errorMessage = null
                             successMessage = null
                             when {
-                                password != confirmPassword -> errorMessage = "Passwords do not match"
-                                password.isBlank() -> errorMessage = "Password is required"
                                 username.isBlank() -> errorMessage = "Username is required"
+                                email.isBlank() -> errorMessage = "Email is required"
+                                password.isBlank() -> errorMessage = "Password is required"
+                                password != confirmPassword -> errorMessage = "Passwords do not match"
                                 else -> {
-                                    val result = authRegister(
-                                        username.trim(),
-                                        email.trim().takeIf { it.isNotBlank() },
-                                        password
-                                    )
-                                    result.fold(
-                                        onSuccess = {
-                                            successMessage = "Account created. You're logged in."
-                                            onLoginSuccess()
-                                        },
-                                        onFailure = { errorMessage = it.message ?: "Registration failed" }
-                                    )
+                                    isSubmitting = true
+                                    scope.launch {
+                                        val result = authRegister(username.trim(), email.trim(), password)
+                                        result.fold(
+                                            onSuccess = {
+                                                successMessage = "Account created. You're logged in."
+                                                onLoginSuccess()
+                                            },
+                                            onFailure = { errorMessage = it.message ?: "Registration failed" }
+                                        )
+                                        isSubmitting = false
+                                    }
                                 }
                             }
                         }
                     ) {
-                        Text("Create account", color = DestinyAccentBlue, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = if (isSubmitting) "Creating..." else "Create account",
+                            color = DestinyAccentBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -399,11 +370,47 @@ fun LoginScreen(
         }
         Spacer(modifier = Modifier.height(24.dp))
         OutlinedButton(
+            enabled = googleSignInConfigured && !isSubmitting && activity != null,
             onClick = {
-                if (activity != null) {
-                    googleSignInLauncher.launch(googleSignInClient.signInIntent)
-                } else {
+                errorMessage = null
+                successMessage = null
+                val currentActivity = activity
+
+                if (!firebaseConfigured) {
+                    errorMessage = "Firebase is not configured yet."
+                    return@OutlinedButton
+                }
+                if (!googleSignInConfigured) {
+                    errorMessage = "Google sign-in is not configured yet. Add firebase.webClientId to local.properties."
+                    return@OutlinedButton
+                }
+                if (currentActivity == null) {
                     errorMessage = "Unable to start sign-in"
+                    return@OutlinedButton
+                }
+
+                isSubmitting = true
+                scope.launch {
+                    val result = runCatching {
+                        requestGoogleIdToken(
+                            credentialManager = credentialManager,
+                            activity = currentActivity,
+                            webClientId = googleWebClientId
+                        )
+                    }
+
+                    result.fold(
+                        onSuccess = { idToken ->
+                            authLoginWithGoogle(idToken).fold(
+                                onSuccess = { onLoginSuccess() },
+                                onFailure = { errorMessage = it.message ?: "Google sign-in failed" }
+                            )
+                        },
+                        onFailure = { throwable ->
+                            errorMessage = throwable.message ?: "Google sign-in failed"
+                        }
+                    )
+                    isSubmitting = false
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -416,12 +423,87 @@ fun LoginScreen(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Sign in with Google",
+                text = if (isSubmitting) "Please wait..." else "Sign in with Google",
                 color = DestinyAccentBlue,
                 fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (!googleSignInConfigured) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "Google sign-in will unlock after you add firebase.webClientId to local.properties.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
 }
 
-private enum class LoginMode { Login, CreateAccount }
+@Composable
+private fun textFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = DestinyAccentBlue,
+    focusedLabelColor = DestinyAccentBlue,
+    cursorColor = DestinyAccentBlue,
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+)
+
+private suspend fun requestGoogleIdToken(
+    credentialManager: CredentialManager,
+    activity: Activity,
+    webClientId: String
+): String {
+    return try {
+        extractGoogleIdToken(
+            credentialManager.getCredential(
+                context = activity,
+                request = googleCredentialRequest(
+                    webClientId = webClientId,
+                    filterByAuthorizedAccounts = true
+                )
+            ).credential
+        )
+    } catch (_: NoCredentialException) {
+        extractGoogleIdToken(
+            credentialManager.getCredential(
+                context = activity,
+                request = googleCredentialRequest(
+                    webClientId = webClientId,
+                    filterByAuthorizedAccounts = false
+                )
+            ).credential
+        )
+    }
+}
+
+private fun googleCredentialRequest(
+    webClientId: String,
+    filterByAuthorizedAccounts: Boolean
+): GetCredentialRequest {
+    val googleIdOption = GetGoogleIdOption.Builder()
+        .setServerClientId(webClientId)
+        .setFilterByAuthorizedAccounts(filterByAuthorizedAccounts)
+        .setAutoSelectEnabled(filterByAuthorizedAccounts)
+        .build()
+
+    return GetCredentialRequest.Builder()
+        .addCredentialOption(googleIdOption)
+        .build()
+}
+
+private fun extractGoogleIdToken(credential: Credential): String {
+    if (
+        credential is CustomCredential &&
+        credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+    ) {
+        return GoogleIdTokenCredential.createFrom(credential.data).idToken
+    }
+
+    throw IllegalStateException("Unexpected credential returned by Google sign-in")
+}
+
+private enum class LoginMode {
+    Login,
+    CreateAccount
+}

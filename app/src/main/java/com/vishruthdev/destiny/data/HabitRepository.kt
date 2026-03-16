@@ -1,16 +1,24 @@
 package com.vishruthdev.destiny.data
 
-import com.vishruthdev.destiny.data.local.HabitCompletionEntity
-import com.vishruthdev.destiny.data.local.HabitDao
-import com.vishruthdev.destiny.data.local.HabitEntity
-import com.vishruthdev.destiny.data.local.RevisionCompletionEntity
-import com.vishruthdev.destiny.data.local.RevisionTopicEntity
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
+import com.vishruthdev.destiny.FirebaseRuntimeConfig
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 import java.util.Calendar
 import java.util.UUID
 
-class HabitRepository(private val habitDao: HabitDao) {
+class HabitRepository(
+    private val firebaseConfig: FirebaseRuntimeConfig,
+    private val firebaseAuth: FirebaseAuth?,
+    private val firestore: FirebaseFirestore?
+) {
 
     fun todayStartMillis(): Long {
         val cal = Calendar.getInstance()
@@ -27,23 +35,16 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     /** All habits with today's completion status for the home screen. */
     fun getTodayHabitsWithCompletion(): Flow<List<HabitWithCompletion>> {
-        return combine(
-            habitDao.getAllHabits(),
-            habitDao.getAllHabitCompletions()
-        ) { habits, completions ->
+        return habitsFlow().map { habits ->
             val now = Calendar.getInstance().timeInMillis
             val todayStart = todayStartMillis(now)
-            val completionDatesByHabit = completions
-                .groupBy { it.habitId }
-                .mapValues { (_, entries) -> entries.map { it.dateMillis }.toSet() }
-
             habits
                 .filter { habit ->
                     habit.startDateMillis <= todayStart &&
                         now >= calculateHabitDueAt(todayStart, habit.startHour, habit.startMinute)
                 }
                 .map { habit ->
-                    val completionDates = completionDatesByHabit[habit.id].orEmpty()
+                    val completionDates = habit.completionDates.toSet()
                     val history = calculateHabitHistory(
                         startDateMillis = habit.startDateMillis,
                         completionDates = completionDates,
@@ -65,17 +66,10 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     /** All habits with streak and 30-day completion rate for the Habits screen. */
     fun getHabitsWithStats(): Flow<List<HabitWithStats>> {
-        return combine(
-            habitDao.getAllHabits(),
-            habitDao.getAllHabitCompletions()
-        ) { habits, completions ->
+        return habitsFlow().map { habits ->
             val now = Calendar.getInstance().timeInMillis
-            val completionDatesByHabit = completions
-                .groupBy { it.habitId }
-                .mapValues { (_, entries) -> entries.map { it.dateMillis }.toSet() }
-
             habits.map { habit ->
-                val completionDates = completionDatesByHabit[habit.id].orEmpty()
+                val completionDates = habit.completionDates.toSet()
                 val streak = computeHabitStreak(
                     completionDates = completionDates,
                     startDateMillis = habit.startDateMillis,
@@ -129,12 +123,16 @@ class HabitRepository(private val habitDao: HabitDao) {
     }
 
     suspend fun setCompletedToday(habitId: String, completed: Boolean) {
+        val habitsCollection = currentUserHabitsCollection() ?: return
         val today = todayStartMillis()
-        if (completed) {
-            habitDao.insertCompletion(HabitCompletionEntity(habitId = habitId, dateMillis = today))
+        val operation = if (completed) {
+            FieldValue.arrayUnion(today)
         } else {
-            habitDao.deleteCompletion(habitId, today)
+            FieldValue.arrayRemove(today)
         }
+        habitsCollection.document(habitId)
+            .update("completionDates", operation)
+            .awaitResult()
     }
 
     suspend fun addHabit(
@@ -143,35 +141,33 @@ class HabitRepository(private val habitDao: HabitDao) {
         startHour: Int,
         startMinute: Int
     ): String {
+        val habitsCollection = currentUserHabitsCollection() ?: return ""
         val id = UUID.randomUUID().toString()
-        val entity = HabitEntity(
+        val entity = HabitDocument(
             id = id,
             name = name,
             createdAtMillis = Calendar.getInstance().timeInMillis,
             startDateMillis = startDateMillis,
             startHour = startHour.coerceIn(0, 23),
-            startMinute = startMinute.coerceIn(0, 59)
+            startMinute = startMinute.coerceIn(0, 59),
+            completionDates = emptyList()
         )
-        habitDao.insertHabit(entity)
+        habitsCollection.document(id).set(entity).awaitResult()
         return id
     }
 
     suspend fun deleteHabit(habitId: String) {
-        habitDao.deleteCompletionsForHabit(habitId)
-        habitDao.deleteHabit(habitId)
+        currentUserHabitsCollection()
+            ?.document(habitId)
+            ?.delete()
+            ?.awaitResult()
     }
 
     fun getRevisionTopicsWithProgress(): Flow<List<RevisionTopicWithProgress>> {
-        return combine(
-            habitDao.getAllRevisionTopics(),
-            habitDao.getAllRevisionCompletions()
-        ) { topics, completions ->
-            val completionsByTopic = completions.groupBy { it.topicId }
+        return revisionsFlow().map { topics ->
             val now = Calendar.getInstance().timeInMillis
             topics.map { topic ->
-                val completedDays = completionsByTopic[topic.id].orEmpty()
-                    .map { it.revisionDay }
-                    .toSet()
+                val completedDays = topic.completedDays.map { it.toInt() }.toSet()
                 val dayStates = buildRevisionDayStates(
                     startDateMillis = topic.startDateMillis,
                     revisionHour = topic.revisionHour,
@@ -302,22 +298,26 @@ class HabitRepository(private val habitDao: HabitDao) {
         revisionHour: Int,
         revisionMinute: Int
     ): String {
+        val revisionsCollection = currentUserRevisionsCollection() ?: return ""
         val id = UUID.randomUUID().toString()
-        val entity = RevisionTopicEntity(
+        val entity = RevisionTopicDocument(
             id = id,
             name = name,
             createdAtMillis = Calendar.getInstance().timeInMillis,
             startDateMillis = startDateMillis,
             revisionHour = revisionHour.coerceIn(0, 23),
-            revisionMinute = revisionMinute.coerceIn(0, 59)
+            revisionMinute = revisionMinute.coerceIn(0, 59),
+            completedDays = emptyList()
         )
-        habitDao.insertRevisionTopic(entity)
+        revisionsCollection.document(id).set(entity).awaitResult()
         return id
     }
 
     suspend fun completeActiveRevision(topicId: String): Int? {
-        val topic = habitDao.getRevisionTopicById(topicId) ?: return null
-        val completedDays = habitDao.getCompletedRevisionDaysForTopic(topicId).toSet()
+        val revisionsCollection = currentUserRevisionsCollection() ?: return null
+        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
+        val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
+        val completedDays = topic.completedDays.map { it.toInt() }.toSet()
         val now = Calendar.getInstance().timeInMillis
 
         val nextActiveDay = revisionScheduleDays.firstOrNull { day ->
@@ -333,37 +333,170 @@ class HabitRepository(private val habitDao: HabitDao) {
                 now >= dueDateMillis
         } ?: return null
 
-        habitDao.insertRevisionCompletion(
-            RevisionCompletionEntity(
-                topicId = topicId,
-                revisionDay = nextActiveDay,
-                completedAtMillis = Calendar.getInstance().timeInMillis
-            )
-        )
+        revisionsCollection.document(topicId)
+            .update("completedDays", FieldValue.arrayUnion(nextActiveDay.toLong()))
+            .awaitResult()
         return nextActiveDay
     }
 
     suspend fun resetRevisionTopicFromToday(topicId: String): Boolean {
-        val topic = habitDao.getRevisionTopicById(topicId) ?: return false
-        habitDao.deleteRevisionCompletionsForTopic(topicId)
-        habitDao.insertRevisionTopic(
-            topic.copy(
-                startDateMillis = todayStartMillis()
+        val revisionsCollection = currentUserRevisionsCollection() ?: return false
+        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
+        val topic = topicSnapshot.toRevisionTopicDocument() ?: return false
+        revisionsCollection.document(topicId)
+            .set(
+                topic.copy(
+                    startDateMillis = todayStartMillis(),
+                    completedDays = emptyList()
+                )
             )
-        )
+            .awaitResult()
         return true
     }
 
     suspend fun deleteRevisionTopic(topicId: String) {
-        habitDao.deleteRevisionCompletionsForTopic(topicId)
-        habitDao.deleteRevisionTopic(topicId)
+        currentUserRevisionsCollection()
+            ?.document(topicId)
+            ?.delete()
+            ?.awaitResult()
     }
 
     suspend fun clearAll() {
-        habitDao.deleteAllRevisionCompletions()
-        habitDao.deleteAllRevisionTopics()
-        habitDao.deleteAllCompletions()
-        habitDao.deleteAllHabits()
+        deleteAllDocuments(currentUserHabitsCollection())
+        deleteAllDocuments(currentUserRevisionsCollection())
+    }
+
+    private suspend fun deleteAllDocuments(collection: com.google.firebase.firestore.CollectionReference?) {
+        if (collection == null) return
+        val snapshot = collection.get().awaitResult()
+        if (snapshot.isEmpty) return
+        val batch = firestore?.batch() ?: return
+        snapshot.documents.forEach { document ->
+            batch.delete(document.reference)
+        }
+        batch.commit().awaitResult()
+    }
+
+    private fun habitsFlow(): Flow<List<HabitDocument>> = callbackFlow {
+        if (!firebaseConfig.isBaseConfigured || firebaseAuth == null || firestore == null) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+
+        var registration: ListenerRegistration? = null
+        val authListener = FirebaseAuth.AuthStateListener { auth ->
+            registration?.remove()
+            registration = null
+
+            val uid = auth.currentUser?.uid
+            if (uid == null) {
+                trySend(emptyList())
+                return@AuthStateListener
+            }
+
+            registration = userDocument(uid)
+                .collection(HABITS_COLLECTION)
+                .orderBy("createdAtMillis", Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, _ ->
+                    val habits = snapshot?.documents.orEmpty()
+                        .mapNotNull { document -> document.toHabitDocument() }
+                    trySend(habits)
+                }
+        }
+
+        firebaseAuth.addAuthStateListener(authListener)
+        authListener.onAuthStateChanged(firebaseAuth)
+
+        awaitClose {
+            registration?.remove()
+            firebaseAuth.removeAuthStateListener(authListener)
+        }
+    }
+
+    private fun revisionsFlow(): Flow<List<RevisionTopicDocument>> = callbackFlow {
+        if (!firebaseConfig.isBaseConfigured || firebaseAuth == null || firestore == null) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+
+        var registration: ListenerRegistration? = null
+        val authListener = FirebaseAuth.AuthStateListener { auth ->
+            registration?.remove()
+            registration = null
+
+            val uid = auth.currentUser?.uid
+            if (uid == null) {
+                trySend(emptyList())
+                return@AuthStateListener
+            }
+
+            registration = userDocument(uid)
+                .collection(REVISIONS_COLLECTION)
+                .orderBy("createdAtMillis", Query.Direction.ASCENDING)
+                .addSnapshotListener { snapshot, _ ->
+                    val topics = snapshot?.documents.orEmpty()
+                        .mapNotNull { document -> document.toRevisionTopicDocument() }
+                    trySend(topics)
+                }
+        }
+
+        firebaseAuth.addAuthStateListener(authListener)
+        authListener.onAuthStateChanged(firebaseAuth)
+
+        awaitClose {
+            registration?.remove()
+            firebaseAuth.removeAuthStateListener(authListener)
+        }
+    }
+
+    private fun currentUserHabitsCollection(): com.google.firebase.firestore.CollectionReference? {
+        val uid = firebaseAuth?.currentUser?.uid ?: return null
+        return userDocument(uid).collection(HABITS_COLLECTION)
+    }
+
+    private fun currentUserRevisionsCollection(): com.google.firebase.firestore.CollectionReference? {
+        val uid = firebaseAuth?.currentUser?.uid ?: return null
+        return userDocument(uid).collection(REVISIONS_COLLECTION)
+    }
+
+    private fun userDocument(uid: String) = firestore!!
+        .collection(USERS_COLLECTION)
+        .document(uid)
+
+    private fun DocumentSnapshot.toHabitDocument(): HabitDocument? {
+        return toObject(HabitDocument::class.java)?.copy(id = id)
+    }
+
+    private fun DocumentSnapshot.toRevisionTopicDocument(): RevisionTopicDocument? {
+        return toObject(RevisionTopicDocument::class.java)?.copy(id = id)
+    }
+
+    private data class HabitDocument(
+        val id: String = "",
+        val name: String = "",
+        val createdAtMillis: Long = 0L,
+        val startDateMillis: Long = 0L,
+        val startHour: Int = 0,
+        val startMinute: Int = 0,
+        val completionDates: List<Long> = emptyList()
+    )
+
+    private data class RevisionTopicDocument(
+        val id: String = "",
+        val name: String = "",
+        val createdAtMillis: Long = 0L,
+        val startDateMillis: Long = 0L,
+        val revisionHour: Int = 0,
+        val revisionMinute: Int = 0,
+        val completedDays: List<Long> = emptyList()
+    )
+
+    private companion object {
+        const val USERS_COLLECTION = "users"
+        const val HABITS_COLLECTION = "habits"
+        const val REVISIONS_COLLECTION = "revisionTopics"
     }
 }
 

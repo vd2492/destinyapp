@@ -1,30 +1,50 @@
 # Google Sign-In setup
 
-For **Sign in with Google** to work, you must create an OAuth 2.0 client in Google Cloud and register your app.
+Destiny now uses `Firebase Auth + Credential Manager` for Google sign-in.
+
+## What you need
+
+1. A Firebase project
+2. Google sign-in enabled in Firebase Auth
+3. An Android OAuth client for your app package and SHA-1
+4. A Web OAuth client ID for ID token exchange with Firebase
 
 ## Steps
 
-1. **Google Cloud Console**  
-   Go to [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
+1. Open Firebase Console and create or select your project.
+2. In `Authentication -> Sign-in method`, enable `Google`.
+3. In `Project settings -> Your apps`, register the Android app:
+   - Package name: `com.vishruthdev.destiny`
+   - Add your debug SHA-1
+4. In `Project settings -> General`, note these values:
+   - `App ID`
+   - `Project ID`
+   - `Web API Key`
+   - `Storage bucket` if shown
+   - `Sender ID`
+5. In `Project settings -> General -> Your apps -> SDK setup and configuration`, copy the `Web client ID`.
+6. Add these values to `local.properties`:
 
-2. **OAuth consent screen**  
-   In **APIs & Services → OAuth consent screen**, configure the consent screen (External or Internal, app name, support email).
+```properties
+firebase.apiKey=YOUR_WEB_API_KEY
+firebase.appId=YOUR_ANDROID_APP_ID
+firebase.projectId=YOUR_PROJECT_ID
+firebase.storageBucket=YOUR_STORAGE_BUCKET
+firebase.gcmSenderId=YOUR_SENDER_ID
+firebase.webClientId=YOUR_WEB_CLIENT_ID
+```
 
-3. **Get your app’s SHA-1**  
-   - **Debug:**  
-     `./gradlew signingReport`  
-     or in Android Studio: **Gradle → app → Tasks → android → signingReport**  
-   - Use the **SHA-1** under `Variant: debug`.
+## Getting your SHA-1
 
-4. **Create Android OAuth client**  
-   - **APIs & Services → Credentials → Create credentials → OAuth client ID**  
-   - Application type: **Android**  
-   - Name: e.g. `Destiny Android`  
-   - Package name: `com.vishruthdev.destiny`  
-   - SHA-1: paste the value from step 3  
-   - Create
+Run:
 
-5. **Run the app**  
-   Install and run the app. The **Sign in with Google** button will use this client. No code changes are required; the default `GoogleSignInOptions.DEFAULT_SIGN_IN` uses your app’s package and signing key.
+```bash
+./gradlew signingReport
+```
 
-For **release** builds, add a second OAuth client with your **release** keystore’s SHA-1 and the same package name.
+Use the `SHA1` value from the `debug` variant while developing. Add your release SHA-1 before shipping production builds.
+
+## Notes
+
+- The app initializes Firebase from `local.properties`, so `google-services.json` is not required for this setup.
+- If `firebase.webClientId` is missing, email/password auth still works but the Google button stays disabled.
