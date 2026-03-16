@@ -194,6 +194,7 @@ class HabitRepository(
         completedDays: Set<Int>,
         nowMillis: Long
     ): List<RevisionDayProgress> {
+        val todayStart = todayStartMillis(nowMillis)
         return revisionScheduleDays.map { day ->
             val previousDays = revisionScheduleDays.takeWhile { it < day }
             val dueDateMillis = calculateRevisionDueAt(
@@ -202,12 +203,13 @@ class HabitRepository(
                 revisionMinute = revisionMinute,
                 revisionDay = day
             )
-            val overdueAtMillis = todayStartMillis(dueDateMillis) + oneDayMillis
+            val dueDayStart = todayStartMillis(dueDateMillis)
+            val overdueAtMillis = dueDayStart + oneDayMillis
             val state = when {
                 completedDays.contains(day) -> RevisionDayState.Completed
                 previousDays.any { it !in completedDays } -> RevisionDayState.Locked
-                nowMillis >= overdueAtMillis -> RevisionDayState.Overdue
-                nowMillis >= dueDateMillis -> RevisionDayState.Active
+                todayStart >= overdueAtMillis -> RevisionDayState.Overdue
+                todayStart >= dueDayStart -> RevisionDayState.Active
                 else -> RevisionDayState.Locked
             }
             RevisionDayProgress(day = day, state = state)
@@ -319,6 +321,7 @@ class HabitRepository(
         val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
         val completedDays = topic.completedDays.map { it.toInt() }.toSet()
         val now = Calendar.getInstance().timeInMillis
+        val todayStart = todayStartMillis(now)
 
         val nextActiveDay = revisionScheduleDays.firstOrNull { day ->
             val previousDays = revisionScheduleDays.takeWhile { it < day }
@@ -328,9 +331,10 @@ class HabitRepository(
                 revisionMinute = topic.revisionMinute,
                 revisionDay = day
             )
+            val dueDayStart = todayStartMillis(dueDateMillis)
             day !in completedDays &&
                 previousDays.all { it in completedDays } &&
-                now >= dueDateMillis
+                todayStart >= dueDayStart
         } ?: return null
 
         revisionsCollection.document(topicId)
