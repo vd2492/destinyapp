@@ -1,6 +1,7 @@
 package com.vishruthdev.destiny.ui
 
 import android.app.Activity
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,7 +52,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.NoCredentialException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import kotlinx.coroutines.launch
@@ -403,11 +404,12 @@ fun LoginScreen(
                         onSuccess = { idToken ->
                             authLoginWithGoogle(idToken).fold(
                                 onSuccess = { onLoginSuccess() },
-                                onFailure = { errorMessage = it.message ?: "Google sign-in failed" }
+                                onFailure = { errorMessage = mapGoogleSignInError(it) }
                             )
                         },
                         onFailure = { throwable ->
-                            errorMessage = throwable.message ?: "Google sign-in failed"
+                            Log.w("LoginScreen", "Google sign-in failed", throwable)
+                            errorMessage = mapGoogleSignInError(throwable)
                         }
                     )
                     isSubmitting = false
@@ -454,37 +456,16 @@ private suspend fun requestGoogleIdToken(
     activity: Activity,
     webClientId: String
 ): String {
-    return try {
-        extractGoogleIdToken(
-            credentialManager.getCredential(
-                context = activity,
-                request = googleCredentialRequest(
-                    webClientId = webClientId,
-                    filterByAuthorizedAccounts = true
-                )
-            ).credential
-        )
-    } catch (_: NoCredentialException) {
-        extractGoogleIdToken(
-            credentialManager.getCredential(
-                context = activity,
-                request = googleCredentialRequest(
-                    webClientId = webClientId,
-                    filterByAuthorizedAccounts = false
-                )
-            ).credential
-        )
-    }
+    return extractGoogleIdToken(
+        credentialManager.getCredential(
+            context = activity,
+            request = googleCredentialRequest(webClientId = webClientId)
+        ).credential
+    )
 }
 
-private fun googleCredentialRequest(
-    webClientId: String,
-    filterByAuthorizedAccounts: Boolean
-): GetCredentialRequest {
-    val googleIdOption = GetGoogleIdOption.Builder()
-        .setServerClientId(webClientId)
-        .setFilterByAuthorizedAccounts(filterByAuthorizedAccounts)
-        .setAutoSelectEnabled(filterByAuthorizedAccounts)
+private fun googleCredentialRequest(webClientId: String): GetCredentialRequest {
+    val googleIdOption = GetSignInWithGoogleOption.Builder(webClientId)
         .build()
 
     return GetCredentialRequest.Builder()
@@ -492,10 +473,38 @@ private fun googleCredentialRequest(
         .build()
 }
 
+private fun mapGoogleSignInError(throwable: Throwable): String {
+    if (throwable is NoCredentialException) {
+        return "No Google account was available to sign in."
+    }
+
+    val message = throwable.message.orEmpty()
+    val simpleName = throwable::class.java.simpleName
+
+    if (
+        simpleName.contains("Cancellation", ignoreCase = true) ||
+        message.contains("cancel", ignoreCase = true)
+    ) {
+        return "Google sign-in was cancelled."
+    }
+
+    if (
+        message.contains("developer console", ignoreCase = true) ||
+        message.contains("10:", ignoreCase = true)
+    ) {
+        return "Google sign-in is not configured correctly yet. Check your SHA-1 and Web client ID."
+    }
+
+    return message.ifBlank { "Google sign-in failed" }
+}
+
 private fun extractGoogleIdToken(credential: Credential): String {
     if (
         credential is CustomCredential &&
-        credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+        (
+            credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL ||
+                credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
+            )
     ) {
         return GoogleIdTokenCredential.createFrom(credential.data).idToken
     }

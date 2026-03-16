@@ -1,5 +1,6 @@
 package com.vishruthdev.destiny.data
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -7,10 +8,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.vishruthdev.destiny.FirebaseRuntimeConfig
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.UUID
 
@@ -39,10 +42,7 @@ class HabitRepository(
             val now = Calendar.getInstance().timeInMillis
             val todayStart = todayStartMillis(now)
             habits
-                .filter { habit ->
-                    habit.startDateMillis <= todayStart &&
-                        now >= calculateHabitDueAt(todayStart, habit.startHour, habit.startMinute)
-                }
+                .filter { habit -> habit.startDateMillis <= todayStart }
                 .map { habit ->
                     val completionDates = habit.completionDates.toSet()
                     val history = calculateHabitHistory(
@@ -377,76 +377,84 @@ class HabitRepository(
         batch.commit().awaitResult()
     }
 
-    private fun habitsFlow(): Flow<List<HabitDocument>> = callbackFlow {
+    private fun habitsFlow(): Flow<List<HabitDocument>> = userCollectionFlow(
+        collectionName = HABITS_COLLECTION,
+        mapper = { toHabitDocument() }
+    )
+
+    private fun revisionsFlow(): Flow<List<RevisionTopicDocument>> = userCollectionFlow(
+        collectionName = REVISIONS_COLLECTION,
+        mapper = { toRevisionTopicDocument() }
+    )
+
+    private fun <T> userCollectionFlow(
+        collectionName: String,
+        mapper: DocumentSnapshot.() -> T?
+    ): Flow<List<T>> = callbackFlow {
         if (!firebaseConfig.isBaseConfigured || firebaseAuth == null || firestore == null) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
 
+        var activeUid: String? = null
         var registration: ListenerRegistration? = null
-        val authListener = FirebaseAuth.AuthStateListener { auth ->
+        var initialLoadJob: Job? = null
+
+        fun clearActiveObserver() {
             registration?.remove()
             registration = null
+            initialLoadJob?.cancel()
+            initialLoadJob = null
+        }
 
+        val authListener = FirebaseAuth.AuthStateListener { auth ->
             val uid = auth.currentUser?.uid
+            if (uid == activeUid && registration != null) {
+                return@AuthStateListener
+            }
+
+            clearActiveObserver()
+            activeUid = uid
+
             if (uid == null) {
                 trySend(emptyList())
                 return@AuthStateListener
             }
 
-            registration = userDocument(uid)
-                .collection(HABITS_COLLECTION)
+            val query = userDocument(uid)
+                .collection(collectionName)
                 .orderBy("createdAtMillis", Query.Direction.ASCENDING)
-                .addSnapshotListener { snapshot, _ ->
-                    val habits = snapshot?.documents.orEmpty()
-                        .mapNotNull { document -> document.toHabitDocument() }
-                    trySend(habits)
+
+            initialLoadJob = launch {
+                runCatching {
+                    query.get().awaitResult()
+                }.onSuccess { snapshot ->
+                    val documents = snapshot.documents.mapNotNull { document -> document.mapper() }
+                    trySend(documents)
+                }.onFailure { throwable ->
+                    Log.w(TAG, "Initial load failed for $collectionName user=$uid", throwable)
                 }
+            }
+
+            registration = query.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG, "Listener failed for $collectionName user=$uid", error)
+                    return@addSnapshotListener
+                }
+
+                val documents = snapshot?.documents
+                    ?.mapNotNull { document -> document.mapper() }
+                    ?: return@addSnapshotListener
+                trySend(documents)
+            }
         }
 
         firebaseAuth.addAuthStateListener(authListener)
         authListener.onAuthStateChanged(firebaseAuth)
 
         awaitClose {
-            registration?.remove()
-            firebaseAuth.removeAuthStateListener(authListener)
-        }
-    }
-
-    private fun revisionsFlow(): Flow<List<RevisionTopicDocument>> = callbackFlow {
-        if (!firebaseConfig.isBaseConfigured || firebaseAuth == null || firestore == null) {
-            trySend(emptyList())
-            awaitClose { }
-            return@callbackFlow
-        }
-
-        var registration: ListenerRegistration? = null
-        val authListener = FirebaseAuth.AuthStateListener { auth ->
-            registration?.remove()
-            registration = null
-
-            val uid = auth.currentUser?.uid
-            if (uid == null) {
-                trySend(emptyList())
-                return@AuthStateListener
-            }
-
-            registration = userDocument(uid)
-                .collection(REVISIONS_COLLECTION)
-                .orderBy("createdAtMillis", Query.Direction.ASCENDING)
-                .addSnapshotListener { snapshot, _ ->
-                    val topics = snapshot?.documents.orEmpty()
-                        .mapNotNull { document -> document.toRevisionTopicDocument() }
-                    trySend(topics)
-                }
-        }
-
-        firebaseAuth.addAuthStateListener(authListener)
-        authListener.onAuthStateChanged(firebaseAuth)
-
-        awaitClose {
-            registration?.remove()
+            clearActiveObserver()
             firebaseAuth.removeAuthStateListener(authListener)
         }
     }
@@ -494,6 +502,7 @@ class HabitRepository(
     )
 
     private companion object {
+        const val TAG = "HabitRepository"
         const val USERS_COLLECTION = "users"
         const val HABITS_COLLECTION = "habits"
         const val REVISIONS_COLLECTION = "revisionTopics"
