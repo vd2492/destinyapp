@@ -470,6 +470,14 @@ private fun HabitRow(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
+            if (state == HabitCompletionState.InProgress) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "In progress",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DestinyInProgressOrange
+                )
+            }
             missedLabel?.let { status ->
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
