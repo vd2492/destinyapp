@@ -84,24 +84,10 @@ com.vishruthdev.destiny
 
 ## Firebase Setup
 
-1. Create a Firebase project and register an Android app with package `com.vishruthdev.destiny`
-2. Enable **Email/Password** and **Google** sign-in in Firebase Auth
-3. Create a **Firestore Database** in production mode
-4. Deploy security rules: `firebase deploy --only firestore:rules`
-5. Add your SHA-1 fingerprint (`./gradlew signingReport`) to the Firebase console
-6. Create a Web OAuth client for Google Sign-In
-7. Add credentials to `local.properties`:
+This project uses Firebase for authentication and data sync. See the setup guides:
 
-```properties
-firebase.apiKey=YOUR_WEB_API_KEY
-firebase.appId=YOUR_ANDROID_APP_ID
-firebase.projectId=YOUR_PROJECT_ID
-firebase.storageBucket=YOUR_STORAGE_BUCKET
-firebase.gcmSenderId=YOUR_SENDER_ID
-firebase.webClientId=YOUR_WEB_CLIENT_ID
-```
-
-See [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) and [docs/GOOGLE_SIGNIN_SETUP.md](docs/GOOGLE_SIGNIN_SETUP.md) for detailed guides.
+- [Firebase Setup](docs/FIREBASE_SETUP.md)
+- [Google Sign-In Setup](docs/GOOGLE_SIGNIN_SETUP.md)
 
 ## Firestore Schema
 
