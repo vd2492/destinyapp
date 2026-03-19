@@ -34,7 +34,8 @@ service cloud.firestore {
         'startHour',
         'startMinute',
         'completionDates',
-        'inProgressDates'
+        'inProgressDates',
+        'alarmEnabled'
       ]) &&
       request.resource.data.id == habitId &&
       request.resource.data.name is string &&
@@ -54,7 +55,8 @@ service cloud.firestore {
         'revisionHour',
         'revisionMinute',
         'completedDays',
-        'inProgressDays'
+        'inProgressDays',
+        'alarmEnabled'
       ]) &&
       request.resource.data.id == topicId &&
       request.resource.data.name is string &&

@@ -19,7 +19,7 @@ class DestinyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         firebaseConfig = FirebaseInitializer.initialize(this)
-        ReminderNotificationManager.createChannel(this)
+        ReminderNotificationManager.createChannels(this)
         pushTokenSyncManager.start()
         reminderScheduleManager.start()
     }

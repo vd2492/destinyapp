@@ -2,6 +2,8 @@ package com.vishruthdev.destiny.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -25,6 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -32,6 +36,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.vishruthdev.destiny.data.HabitWithStats
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import com.vishruthdev.destiny.ui.theme.DestinyCompletedGreen
+import com.vishruthdev.destiny.ui.theme.DestinyLockedGrey
 import com.vishruthdev.destiny.ui.theme.DestinyMissedRed
 import com.vishruthdev.destiny.viewmodel.HabitStartOption
 import com.vishruthdev.destiny.viewmodel.HabitsViewModel
@@ -101,19 +109,14 @@ fun HabitsScreen(
             modifier = Modifier.weight(1f)
         ) {
             items(filteredHabits) { habit ->
-                HabitStatsCard(
-                    habitId = habit.id,
-                    name = habit.name,
-                    streakDays = habit.streakDays,
-                    completionRatePercent = habit.completionRatePercent,
-                    startDateMillis = habit.startDateMillis,
-                    startHour = habit.startHour,
-                    startMinute = habit.startMinute,
-                    missedDaysCount = habit.missedDaysCount,
-                    latestMissedDateMillis = habit.latestMissedDateMillis,
+                FlippableHabitCard(
+                    habit = habit,
+                    isFlipped = state.flippedHabitId == habit.id,
                     showDeleteButton = state.deleteMode,
+                    onFlip = { viewModel.toggleFlip(habit.id) },
                     onDelete = { viewModel.deleteHabit(habit.id) },
-                    onLongPress = { viewModel.toggleDeleteMode() }
+                    onLongPress = { viewModel.toggleDeleteMode() },
+                    onAlarmToggle = { enabled -> viewModel.toggleHabitAlarm(habit.id, enabled) }
                 )
             }
         }
@@ -334,8 +337,61 @@ private fun SearchBar(
 }
 
 @Composable
+private fun FlippableHabitCard(
+    habit: HabitWithStats,
+    isFlipped: Boolean,
+    showDeleteButton: Boolean,
+    onFlip: () -> Unit,
+    onDelete: () -> Unit,
+    onLongPress: () -> Unit,
+    onAlarmToggle: (Boolean) -> Unit
+) {
+    val rotation by animateFloatAsState(
+        targetValue = if (isFlipped) 180f else 0f,
+        animationSpec = tween(durationMillis = 400),
+        label = "cardFlip"
+    )
+    val isFrontVisible = rotation <= 90f
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                rotationY = rotation
+                cameraDistance = 12f * density
+            }
+            .pointerInput(showDeleteButton) {
+                detectTapGestures(
+                    onTap = { if (!showDeleteButton) onFlip() },
+                    onLongPress = { onLongPress() }
+                )
+            }
+    ) {
+        if (isFrontVisible) {
+            HabitStatsCard(
+                name = habit.name,
+                streakDays = habit.streakDays,
+                completionRatePercent = habit.completionRatePercent,
+                startDateMillis = habit.startDateMillis,
+                startHour = habit.startHour,
+                startMinute = habit.startMinute,
+                missedDaysCount = habit.missedDaysCount,
+                latestMissedDateMillis = habit.latestMissedDateMillis,
+                showDeleteButton = showDeleteButton,
+                onDelete = onDelete
+            )
+        } else {
+            CardBack(
+                name = habit.name,
+                alarmEnabled = habit.alarmEnabled,
+                onAlarmToggle = onAlarmToggle,
+                modifier = Modifier.graphicsLayer { rotationY = 180f }
+            )
+        }
+    }
+}
+
+@Composable
 private fun HabitStatsCard(
-    habitId: String,
     name: String,
     streakDays: Int,
     completionRatePercent: Int,
@@ -345,17 +401,13 @@ private fun HabitStatsCard(
     missedDaysCount: Int,
     latestMissedDateMillis: Long?,
     showDeleteButton: Boolean,
-    onDelete: () -> Unit,
-    onLongPress: () -> Unit
+    onDelete: () -> Unit
 ) {
     val isMissed = missedDaysCount > 0
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (isMissed) DestinyMissedRed.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
-        border = if (isMissed) BorderStroke(1.dp, DestinyMissedRed.copy(alpha = 0.35f)) else null,
-        modifier = Modifier.pointerInput(habitId) {
-            detectTapGestures(onLongPress = { onLongPress() })
-        }
+        border = if (isMissed) BorderStroke(1.dp, DestinyMissedRed.copy(alpha = 0.35f)) else null
     ) {
         Box {
             if (showDeleteButton) {
@@ -460,6 +512,66 @@ private fun HabitStatsCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 ProgressBar(progressPercent = completionRatePercent)
             }
+        }
+    }
+}
+
+@Composable
+private fun CardBack(
+    name: String,
+    alarmEnabled: Boolean,
+    onAlarmToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (alarmEnabled) Icons.Filled.Notifications
+                        else Icons.Filled.NotificationsOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = if (alarmEnabled) DestinyAccentBlue else DestinyLockedGrey
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Alarm (2 min before)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Switch(
+                    checked = alarmEnabled,
+                    onCheckedChange = onAlarmToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f)
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Tap card to flip back",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

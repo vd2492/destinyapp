@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
@@ -19,18 +21,43 @@ object ReminderNotificationManager {
     private const val CHANNEL_NAME = "Destiny Reminders"
     private const val CHANNEL_DESCRIPTION = "Habit and revision reminders"
 
-    fun createChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    private const val ALARM_CHANNEL_ID = "destiny_alarms"
+    private const val ALARM_CHANNEL_NAME = "Destiny Alarms"
+    private const val ALARM_CHANNEL_DESCRIPTION = "Habit and revision alarms (2 min before)"
 
+    fun createChannels(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val notificationManager = context.getSystemService(NotificationManager::class.java) ?: return
-        val channel = NotificationChannel(
+
+        val reminderChannel = NotificationChannel(
             CHANNEL_ID,
             CHANNEL_NAME,
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = CHANNEL_DESCRIPTION
         }
-        notificationManager.createNotificationChannel(channel)
+
+        val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val alarmChannel = NotificationChannel(
+            ALARM_CHANNEL_ID,
+            ALARM_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = ALARM_CHANNEL_DESCRIPTION
+            setSound(
+                alarmSound,
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 500)
+        }
+
+        notificationManager.createNotificationChannel(reminderChannel)
+        notificationManager.createNotificationChannel(alarmChannel)
     }
 
     fun showPushNotification(
@@ -39,26 +66,10 @@ object ReminderNotificationManager {
         title: String,
         body: String
     ) {
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        if (!hasNotificationPermission(context)) return
+        createChannels(context)
 
-        createChannel(context)
-
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            notificationId,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val contentIntent = launchAppPendingIntent(context, notificationId)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -66,6 +77,38 @@ object ReminderNotificationManager {
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(notificationId, notification)
+    }
+
+    fun showAlarmNotification(
+        context: Context,
+        notificationId: Int,
+        title: String,
+        body: String
+    ) {
+        if (!hasNotificationPermission(context)) return
+        createChannels(context)
+
+        val contentIntent = launchAppPendingIntent(context, notificationId)
+        val fullScreenIntent = launchAppPendingIntent(context, notificationId + 1)
+
+        val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+        val notification = NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setSound(alarmSound)
+            .setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
+            .setFullScreenIntent(fullScreenIntent, true)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)
             .build()
@@ -110,5 +153,24 @@ object ReminderNotificationManager {
         dueAtMillis: Long
     ): Int {
         return "$type:$itemId:$dueAtMillis".hashCode()
+    }
+
+    private fun hasNotificationPermission(context: Context): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun launchAppPendingIntent(context: Context, requestCode: Int): PendingIntent {
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 }

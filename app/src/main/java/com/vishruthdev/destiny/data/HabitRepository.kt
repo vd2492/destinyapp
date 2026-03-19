@@ -65,7 +65,8 @@ class HabitRepository(
                         startHour = habit.startHour,
                         startMinute = habit.startMinute,
                         missedDaysCount = history.missedDaysCount,
-                        latestMissedDateMillis = history.latestMissedDateMillis
+                        latestMissedDateMillis = history.latestMissedDateMillis,
+                        alarmEnabled = habit.alarmEnabled
                     )
                 }
         }
@@ -106,7 +107,8 @@ class HabitRepository(
                     startHour = habit.startHour,
                     startMinute = habit.startMinute,
                     missedDaysCount = history.missedDaysCount,
-                    latestMissedDateMillis = history.latestMissedDateMillis
+                    latestMissedDateMillis = history.latestMissedDateMillis,
+                    alarmEnabled = habit.alarmEnabled
                 )
             }
         }
@@ -170,6 +172,20 @@ class HabitRepository(
         return id
     }
 
+    suspend fun toggleHabitAlarm(habitId: String, enabled: Boolean) {
+        currentUserHabitsCollection()
+            ?.document(habitId)
+            ?.update("alarmEnabled", enabled)
+            ?.awaitResult()
+    }
+
+    suspend fun toggleRevisionAlarm(topicId: String, enabled: Boolean) {
+        currentUserRevisionsCollection()
+            ?.document(topicId)
+            ?.update("alarmEnabled", enabled)
+            ?.awaitResult()
+    }
+
     suspend fun deleteHabit(habitId: String) {
         currentUserHabitsCollection()
             ?.document(habitId)
@@ -197,7 +213,8 @@ class HabitRepository(
                     dayStates = dayStates,
                     startDateMillis = topic.startDateMillis,
                     revisionHour = topic.revisionHour,
-                    revisionMinute = topic.revisionMinute
+                    revisionMinute = topic.revisionMinute,
+                    alarmEnabled = topic.alarmEnabled
                 )
             }
         }
@@ -534,7 +551,8 @@ class HabitRepository(
         val startHour: Int = 0,
         val startMinute: Int = 0,
         val completionDates: List<Long> = emptyList(),
-        val inProgressDates: List<Long> = emptyList()
+        val inProgressDates: List<Long> = emptyList(),
+        val alarmEnabled: Boolean = true
     )
 
     private data class RevisionTopicDocument(
@@ -545,7 +563,8 @@ class HabitRepository(
         val revisionHour: Int = 0,
         val revisionMinute: Int = 0,
         val completedDays: List<Long> = emptyList(),
-        val inProgressDays: List<Long> = emptyList()
+        val inProgressDays: List<Long> = emptyList(),
+        val alarmEnabled: Boolean = true
     )
 
     private companion object {
@@ -569,7 +588,8 @@ data class HabitWithCompletion(
     val startHour: Int,
     val startMinute: Int,
     val missedDaysCount: Int = 0,
-    val latestMissedDateMillis: Long? = null
+    val latestMissedDateMillis: Long? = null,
+    val alarmEnabled: Boolean = true
 )
 
 data class HabitWithStats(
@@ -581,7 +601,8 @@ data class HabitWithStats(
     val startHour: Int,
     val startMinute: Int,
     val missedDaysCount: Int = 0,
-    val latestMissedDateMillis: Long? = null
+    val latestMissedDateMillis: Long? = null,
+    val alarmEnabled: Boolean = true
 )
 
 enum class RevisionDayState {
@@ -603,7 +624,8 @@ data class RevisionTopicWithProgress(
     val dayStates: List<RevisionDayProgress>,
     val startDateMillis: Long,
     val revisionHour: Int,
-    val revisionMinute: Int
+    val revisionMinute: Int,
+    val alarmEnabled: Boolean = true
 ) {
     val activeDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.Active }?.day

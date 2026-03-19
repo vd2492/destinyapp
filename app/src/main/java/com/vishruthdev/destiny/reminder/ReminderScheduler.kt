@@ -27,66 +27,113 @@ class ReminderScheduler(context: Context) {
         val newRequestCodes = mutableSetOf<Int>()
 
         for (habit in habits) {
-            val code = scheduleHabitReminder(habit, nowMillis)
-            if (code != null) newRequestCodes.add(code)
+            scheduleHabitReminders(habit, nowMillis, newRequestCodes)
         }
 
         for (revision in revisions) {
-            val code = scheduleRevisionReminder(revision, nowMillis)
-            if (code != null) newRequestCodes.add(code)
+            scheduleRevisionReminders(revision, nowMillis, newRequestCodes)
         }
 
         saveTrackedCodes(newRequestCodes)
         Log.d(TAG, "Scheduled ${newRequestCodes.size} alarms (${habits.size} habits, ${revisions.size} revisions)")
     }
 
-    private fun scheduleHabitReminder(habit: HabitWithStats, nowMillis: Long): Int? {
+    private fun scheduleHabitReminders(
+        habit: HabitWithStats,
+        nowMillis: Long,
+        codes: MutableSet<Int>
+    ) {
+        if (!habit.alarmEnabled) return
+
         val todayStart = dayStartMillis(nowMillis)
         val dueToday = todayStart + timeOffsetMillis(habit.startHour, habit.startMinute)
-        val triggerToday = dueToday - REMINDER_LEAD_MS
 
-        val (triggerAt, dueAt) = if (triggerToday > nowMillis) {
-            triggerToday to dueToday
+        // Calculate notification trigger (10 min before)
+        val notifyToday = dueToday - NOTIFY_LEAD_MS
+        val (notifyAt, notifyDueAt) = if (notifyToday > nowMillis) {
+            notifyToday to dueToday
         } else {
-            (triggerToday + ONE_DAY_MS) to (dueToday + ONE_DAY_MS)
+            (notifyToday + ONE_DAY_MS) to (dueToday + ONE_DAY_MS)
         }
 
-        // Don't schedule if the habit hasn't started yet
-        if (habit.startDateMillis > dayStartMillis(dueAt)) return null
+        // Calculate alarm trigger (2 min before)
+        val alarmToday = dueToday - ALARM_LEAD_MS
+        val (alarmAt, alarmDueAt) = if (alarmToday > nowMillis) {
+            alarmToday to dueToday
+        } else {
+            (alarmToday + ONE_DAY_MS) to (dueToday + ONE_DAY_MS)
+        }
 
-        val requestCode = habitRequestCode(habit.id)
-        setAlarm(
-            requestCode = requestCode,
-            triggerAtMillis = triggerAt,
-            title = "Habit in 10 minutes",
-            body = "${habit.name} starts soon.",
-            notificationId = ReminderNotificationManager.notificationId("habit", habit.id, dueAt)
-        )
-        return requestCode
+        // 10 min notification
+        if (habit.startDateMillis <= dayStartMillis(notifyDueAt)) {
+            val code = habitNotifyRequestCode(habit.id)
+            setAlarm(
+                requestCode = code,
+                triggerAtMillis = notifyAt,
+                title = "Habit in 10 minutes",
+                body = "${habit.name} starts soon.",
+                notificationId = ReminderNotificationManager.notificationId("habit_notify", habit.id, notifyDueAt),
+                isAlarm = false
+            )
+            codes.add(code)
+        }
+
+        // 2 min device alarm
+        if (habit.startDateMillis <= dayStartMillis(alarmDueAt)) {
+            val code = habitAlarmRequestCode(habit.id)
+            setAlarm(
+                requestCode = code,
+                triggerAtMillis = alarmAt,
+                title = "Time for ${habit.name}",
+                body = "${habit.name} starts now!",
+                notificationId = ReminderNotificationManager.notificationId("habit_alarm", habit.id, alarmDueAt),
+                isAlarm = true
+            )
+            codes.add(code)
+        }
     }
 
-    private fun scheduleRevisionReminder(
+    private fun scheduleRevisionReminders(
         revision: RevisionTopicWithProgress,
-        nowMillis: Long
-    ): Int? {
-        val nextDay = findNextSchedulableDay(revision) ?: return null
+        nowMillis: Long,
+        codes: MutableSet<Int>
+    ) {
+        if (!revision.alarmEnabled) return
+        val nextDay = findNextSchedulableDay(revision) ?: return
 
         val dayOffsetMillis = (nextDay - 1).coerceAtLeast(0) * ONE_DAY_MS
         val timeOffset = timeOffsetMillis(revision.revisionHour, revision.revisionMinute)
         val dueAtMillis = revision.startDateMillis + dayOffsetMillis + timeOffset
-        val triggerAtMillis = dueAtMillis - REMINDER_LEAD_MS
 
-        if (triggerAtMillis <= nowMillis) return null
+        // 10 min notification
+        val notifyAt = dueAtMillis - NOTIFY_LEAD_MS
+        if (notifyAt > nowMillis) {
+            val code = revisionNotifyRequestCode(revision.id)
+            setAlarm(
+                requestCode = code,
+                triggerAtMillis = notifyAt,
+                title = "Revision in 10 minutes",
+                body = "Day $nextDay for ${revision.name} starts soon.",
+                notificationId = ReminderNotificationManager.notificationId("rev_notify", revision.id, dueAtMillis),
+                isAlarm = false
+            )
+            codes.add(code)
+        }
 
-        val requestCode = revisionRequestCode(revision.id)
-        setAlarm(
-            requestCode = requestCode,
-            triggerAtMillis = triggerAtMillis,
-            title = "Revision in 10 minutes",
-            body = "Day $nextDay for ${revision.name} starts soon.",
-            notificationId = ReminderNotificationManager.notificationId("revision", revision.id, dueAtMillis)
-        )
-        return requestCode
+        // 2 min device alarm
+        val alarmAt = dueAtMillis - ALARM_LEAD_MS
+        if (alarmAt > nowMillis) {
+            val code = revisionAlarmRequestCode(revision.id)
+            setAlarm(
+                requestCode = code,
+                triggerAtMillis = alarmAt,
+                title = "Time for ${revision.name}",
+                body = "Day $nextDay revision starts now!",
+                notificationId = ReminderNotificationManager.notificationId("rev_alarm", revision.id, dueAtMillis),
+                isAlarm = true
+            )
+            codes.add(code)
+        }
     }
 
     private fun findNextSchedulableDay(revision: RevisionTopicWithProgress): Int? {
@@ -112,12 +159,14 @@ class ReminderScheduler(context: Context) {
         triggerAtMillis: Long,
         title: String,
         body: String,
-        notificationId: Int
+        notificationId: Int,
+        isAlarm: Boolean
     ) {
         val intent = Intent(appContext, ReminderAlarmReceiver::class.java).apply {
             putExtra(ReminderAlarmReceiver.EXTRA_TITLE, title)
             putExtra(ReminderAlarmReceiver.EXTRA_BODY, body)
             putExtra(ReminderAlarmReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(ReminderAlarmReceiver.EXTRA_IS_ALARM, isAlarm)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -127,24 +176,32 @@ class ReminderScheduler(context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val canUseExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            alarmManager.canScheduleExactAlarms()
+        if (isAlarm) {
+            // Use setAlarmClock for device alarms — guarantees firing and shows alarm icon
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent),
+                pendingIntent
+            )
         } else {
-            true
-        }
+            val canUseExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
 
-        if (canUseExact) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
-        } else {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
+            if (canUseExact) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            }
         }
     }
 
@@ -186,14 +243,17 @@ class ReminderScheduler(context: Context) {
         return ((hour * 60L) + minute) * 60 * 1000L
     }
 
-    private fun habitRequestCode(id: String) = "habit_alarm:$id".hashCode()
-    private fun revisionRequestCode(id: String) = "revision_alarm:$id".hashCode()
+    private fun habitNotifyRequestCode(id: String) = "habit_notify:$id".hashCode()
+    private fun habitAlarmRequestCode(id: String) = "habit_alarm:$id".hashCode()
+    private fun revisionNotifyRequestCode(id: String) = "revision_notify:$id".hashCode()
+    private fun revisionAlarmRequestCode(id: String) = "revision_alarm:$id".hashCode()
 
     private companion object {
         const val TAG = "ReminderScheduler"
         const val PREFS_NAME = "reminder_alarms"
         const val KEY_ACTIVE_CODES = "active_codes"
         const val ONE_DAY_MS = 24 * 60 * 60 * 1000L
-        const val REMINDER_LEAD_MS = 10 * 60 * 1000L
+        const val NOTIFY_LEAD_MS = 10 * 60 * 1000L
+        const val ALARM_LEAD_MS = 2 * 60 * 1000L
     }
 }

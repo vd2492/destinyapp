@@ -26,7 +26,8 @@ data class HabitsUiState(
     val customStartDateMillis: Long = 0L,
     val startHour: Int = 9,
     val startMinute: Int = 0,
-    val deleteMode: Boolean = false
+    val deleteMode: Boolean = false,
+    val flippedHabitId: String? = null
 )
 
 class HabitsViewModel(
@@ -119,6 +120,18 @@ class HabitsViewModel(
     fun deleteHabit(habitId: String) {
         viewModelScope.launch {
             repository.deleteHabit(habitId)
+        }
+    }
+
+    fun toggleFlip(habitId: String) {
+        _state.update {
+            it.copy(flippedHabitId = if (it.flippedHabitId == habitId) null else habitId)
+        }
+    }
+
+    fun toggleHabitAlarm(habitId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            repository.toggleHabitAlarm(habitId, enabled)
         }
     }
 }

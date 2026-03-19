@@ -2,6 +2,8 @@ package com.vishruthdev.destiny.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
@@ -35,6 +39,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -132,14 +139,17 @@ fun RevisionsScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 items(filteredTopics, key = { it.id }) { topic ->
-                    RevisionTopicCard(
+                    FlippableRevisionCard(
                         topic = topic,
+                        isFlipped = state.flippedTopicId == topic.id,
                         showDeleteButton = state.deleteMode,
+                        onFlip = { viewModel.toggleFlip(topic.id) },
                         onDelete = { viewModel.deleteTopic(topic.id) },
                         onLongPress = { viewModel.toggleDeleteMode() },
                         onStartRevision = { viewModel.startRevision(topic.id) },
                         onMarkComplete = { viewModel.completeRevision(topic.id) },
-                        onResetFromToday = { topicToReset = topic }
+                        onResetFromToday = { topicToReset = topic },
+                        onAlarmToggle = { enabled -> viewModel.toggleRevisionAlarm(topic.id, enabled) }
                     )
                 }
             }
@@ -383,11 +393,63 @@ private fun RevisionSearchBar(
 }
 
 @Composable
+private fun FlippableRevisionCard(
+    topic: RevisionTopicWithProgress,
+    isFlipped: Boolean,
+    showDeleteButton: Boolean,
+    onFlip: () -> Unit,
+    onDelete: () -> Unit,
+    onLongPress: () -> Unit,
+    onStartRevision: () -> Unit,
+    onMarkComplete: () -> Unit,
+    onResetFromToday: () -> Unit,
+    onAlarmToggle: (Boolean) -> Unit
+) {
+    val rotation by animateFloatAsState(
+        targetValue = if (isFlipped) 180f else 0f,
+        animationSpec = tween(durationMillis = 400),
+        label = "cardFlip"
+    )
+    val isFrontVisible = rotation <= 90f
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                rotationY = rotation
+                cameraDistance = 12f * density
+            }
+            .pointerInput(showDeleteButton) {
+                detectTapGestures(
+                    onTap = { if (!showDeleteButton) onFlip() },
+                    onLongPress = { onLongPress() }
+                )
+            }
+    ) {
+        if (isFrontVisible) {
+            RevisionTopicCard(
+                topic = topic,
+                showDeleteButton = showDeleteButton,
+                onDelete = onDelete,
+                onStartRevision = onStartRevision,
+                onMarkComplete = onMarkComplete,
+                onResetFromToday = onResetFromToday
+            )
+        } else {
+            RevisionCardBack(
+                name = topic.name,
+                alarmEnabled = topic.alarmEnabled,
+                onAlarmToggle = onAlarmToggle,
+                modifier = Modifier.graphicsLayer { rotationY = 180f }
+            )
+        }
+    }
+}
+
+@Composable
 private fun RevisionTopicCard(
     topic: RevisionTopicWithProgress,
     showDeleteButton: Boolean,
     onDelete: () -> Unit,
-    onLongPress: () -> Unit,
     onStartRevision: () -> Unit,
     onMarkComplete: () -> Unit,
     onResetFromToday: () -> Unit
@@ -398,10 +460,7 @@ private fun RevisionTopicCard(
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (isOverdue) DestinyMissedRed.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
-        border = if (isOverdue) BorderStroke(1.dp, DestinyMissedRed.copy(alpha = 0.35f)) else null,
-        modifier = Modifier.pointerInput(topic.id) {
-            detectTapGestures(onLongPress = { onLongPress() })
-        }
+        border = if (isOverdue) BorderStroke(1.dp, DestinyMissedRed.copy(alpha = 0.35f)) else null
     ) {
         Box {
             if (showDeleteButton) {
@@ -571,6 +630,66 @@ private fun RevisionTopicCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RevisionCardBack(
+    name: String,
+    alarmEnabled: Boolean,
+    onAlarmToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (alarmEnabled) Icons.Filled.Notifications
+                        else Icons.Filled.NotificationsOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = if (alarmEnabled) DestinyAccentBlue else DestinyLockedGrey
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Alarm (2 min before)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Switch(
+                    checked = alarmEnabled,
+                    onCheckedChange = onAlarmToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f)
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Tap card to flip back",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

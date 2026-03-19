@@ -26,7 +26,8 @@ data class RevisionsUiState(
     val customStartDateMillis: Long = 0L,
     val revisionHour: Int = 9,
     val revisionMinute: Int = 0,
-    val deleteMode: Boolean = false
+    val deleteMode: Boolean = false,
+    val flippedTopicId: String? = null
 )
 
 class RevisionsViewModel(
@@ -143,6 +144,18 @@ class RevisionsViewModel(
     fun deleteTopic(topicId: String) {
         viewModelScope.launch {
             repository.deleteRevisionTopic(topicId)
+        }
+    }
+
+    fun toggleFlip(topicId: String) {
+        _state.update {
+            it.copy(flippedTopicId = if (it.flippedTopicId == topicId) null else topicId)
+        }
+    }
+
+    fun toggleRevisionAlarm(topicId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            repository.toggleRevisionAlarm(topicId, enabled)
         }
     }
 }
