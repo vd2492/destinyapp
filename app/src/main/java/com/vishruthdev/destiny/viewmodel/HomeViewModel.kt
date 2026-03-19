@@ -3,6 +3,7 @@ package com.vishruthdev.destiny.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.vishruthdev.destiny.data.HabitCompletionState
 import com.vishruthdev.destiny.data.HabitRepository
 import com.vishruthdev.destiny.data.RevisionTopicWithProgress
 import kotlinx.coroutines.Job
@@ -16,7 +17,7 @@ import kotlinx.coroutines.launch
 data class HabitUiState(
     val id: String,
     val label: String,
-    val completed: Boolean,
+    val state: HabitCompletionState,
     val startHour: Int,
     val startMinute: Int,
     val missedDaysCount: Int,
@@ -50,6 +51,7 @@ class HomeViewModel(
 
     private var celebrationJob: Job? = null
     private var countdownJob: Job? = null
+    private var isFirstEmission = true
 
     init {
         viewModelScope.launch {
@@ -58,7 +60,7 @@ class HomeViewModel(
                     HabitUiState(
                         id = h.id,
                         label = h.name,
-                        completed = h.completedToday,
+                        state = h.state,
                         startHour = h.startHour,
                         startMinute = h.startMinute,
                         missedDaysCount = h.missedDaysCount,
@@ -66,20 +68,27 @@ class HomeViewModel(
                     )
                 }
                 val total = habits.size
-                val progressPercent = if (total == 0) 0 else (habits.count { it.completed }.toFloat() / total * 100).toInt()
+                val progressPercent = if (total == 0) 0 else (habits.count { it.state == HabitCompletionState.Completed }.toFloat() / total * 100).toInt()
                 val allCompleted = total > 0 && progressPercent == 100
 
                 celebrationJob?.cancel()
                 if (allCompleted) {
-                    celebrationJob = viewModelScope.launch {
-                        delay(3000L)
-                        _state.update { it.copy(showAllCompletedState = true, undoCountdownSeconds = 10) }
-                        startUndoCountdown()
+                    if (isFirstEmission) {
+                        // Already completed on app launch — show immediately, no undo
+                        _state.update { it.copy(showAllCompletedState = true, undoCountdownSeconds = -1) }
+                    } else {
+                        // Just completed during this session — delay then show with undo
+                        celebrationJob = viewModelScope.launch {
+                            delay(3000L)
+                            _state.update { it.copy(showAllCompletedState = true, undoCountdownSeconds = 10) }
+                            startUndoCountdown()
+                        }
                     }
                 } else {
                     countdownJob?.cancel()
                     _state.update { it.copy(showAllCompletedState = false, undoCountdownSeconds = -1) }
                 }
+                isFirstEmission = false
 
                 _state.update {
                     it.copy(
@@ -117,14 +126,19 @@ class HomeViewModel(
                 delay(1000L)
                 _state.update { it.copy(undoCountdownSeconds = remaining) }
             }
-            _state.update { it.copy(showAllCompletedState = false, undoCountdownSeconds = -1) }
+            _state.update { it.copy(undoCountdownSeconds = -1) }
         }
     }
 
     fun toggleHabit(id: String) {
         viewModelScope.launch {
             val current = _state.value.habits.find { it.id == id } ?: return@launch
-            repository.setCompletedToday(id, !current.completed)
+            val nextState = when (current.state) {
+                HabitCompletionState.NotStarted -> HabitCompletionState.InProgress
+                HabitCompletionState.InProgress -> HabitCompletionState.Completed
+                HabitCompletionState.Completed -> HabitCompletionState.NotStarted
+            }
+            repository.setHabitStateToday(id, nextState)
         }
     }
 
@@ -133,9 +147,15 @@ class HomeViewModel(
         countdownJob?.cancel()
         viewModelScope.launch {
             _state.value.habits.forEach { habit ->
-                repository.setCompletedToday(habit.id, false)
+                repository.setHabitStateToday(habit.id, HabitCompletionState.NotStarted)
             }
             _state.update { it.copy(showAllCompletedState = false, undoCountdownSeconds = -1) }
+        }
+    }
+
+    fun startRevision(topicId: String) {
+        viewModelScope.launch {
+            repository.startRevision(topicId)
         }
     }
 

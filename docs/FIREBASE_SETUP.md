@@ -4,6 +4,8 @@ Destiny now uses:
 
 - `Firebase Authentication` for email/password and Google sign-in
 - `Cloud Firestore` for habits, revisions, and user profiles
+- `Firebase Cloud Messaging` for reminder pushes
+- `Cloud Functions for Firebase` to send those pushes 10 minutes before due time
 
 ## 1. Create the project
 
@@ -45,12 +47,27 @@ Firestore collections:
 - `users/{uid}`
 - `users/{uid}/habits/{habitId}`
 - `users/{uid}/revisionTopics/{topicId}`
+- `users/{uid}/notificationTokens/{installationId}`
+
+Server-managed collections:
+
+- `users/{uid}/reminderDispatches/{dispatchId}`
 
 Each user only reads and writes their own documents.
 
-## 6. What changed in the app
+## 6. Deploy reminder backend
+
+1. Install the Firebase CLI and log in.
+2. In the repo root, run `cd functions && npm install`.
+3. Deploy with `firebase deploy --only functions,firestore:rules`.
+
+The scheduled function runs every minute, checks all habits/revisions that are about to be due, and sends an FCM push 10 minutes before the start time to every registered device token for that user.
+
+## 7. What changed in the app
 
 - Login is now `email + password`, not username login.
 - Username is stored as the profile display name.
 - Google sign-in uses Credential Manager and exchanges the returned ID token with Firebase Auth.
 - Habits and revisions are stored in Firestore under the signed-in user.
+- Each signed-in device registers its FCM token under the current user.
+- Reminder pushes are sent by Firebase Functions, not scheduled only on the phone itself.

@@ -51,10 +51,17 @@ class HabitRepository(
                         nowMillis = now
                     )
 
+                    val inProgressDates = habit.inProgressDates.toSet()
+                    val todayState = when {
+                        todayStart in completionDates -> HabitCompletionState.Completed
+                        todayStart in inProgressDates -> HabitCompletionState.InProgress
+                        else -> HabitCompletionState.NotStarted
+                    }
+
                     HabitWithCompletion(
                         id = habit.id,
                         name = habit.name,
-                        completedToday = todayStart in completionDates,
+                        state = todayState,
                         startHour = habit.startHour,
                         startMinute = habit.startMinute,
                         missedDaysCount = history.missedDaysCount,
@@ -122,17 +129,24 @@ class HabitRepository(
         return streak
     }
 
-    suspend fun setCompletedToday(habitId: String, completed: Boolean) {
+    suspend fun setHabitStateToday(habitId: String, newState: HabitCompletionState) {
         val habitsCollection = currentUserHabitsCollection() ?: return
         val today = todayStartMillis()
-        val operation = if (completed) {
-            FieldValue.arrayUnion(today)
-        } else {
-            FieldValue.arrayRemove(today)
+        val updates = when (newState) {
+            HabitCompletionState.InProgress -> mapOf(
+                "inProgressDates" to FieldValue.arrayUnion(today),
+                "completionDates" to FieldValue.arrayRemove(today)
+            )
+            HabitCompletionState.Completed -> mapOf(
+                "completionDates" to FieldValue.arrayUnion(today),
+                "inProgressDates" to FieldValue.arrayRemove(today)
+            )
+            HabitCompletionState.NotStarted -> mapOf(
+                "completionDates" to FieldValue.arrayRemove(today),
+                "inProgressDates" to FieldValue.arrayRemove(today)
+            )
         }
-        habitsCollection.document(habitId)
-            .update("completionDates", operation)
-            .awaitResult()
+        habitsCollection.document(habitId).update(updates).awaitResult()
     }
 
     suspend fun addHabit(
@@ -168,11 +182,13 @@ class HabitRepository(
             val now = Calendar.getInstance().timeInMillis
             topics.map { topic ->
                 val completedDays = topic.completedDays.map { it.toInt() }.toSet()
+                val inProgressDays = topic.inProgressDays.map { it.toInt() }.toSet()
                 val dayStates = buildRevisionDayStates(
                     startDateMillis = topic.startDateMillis,
                     revisionHour = topic.revisionHour,
                     revisionMinute = topic.revisionMinute,
                     completedDays = completedDays,
+                    inProgressDays = inProgressDays,
                     nowMillis = now
                 )
                 RevisionTopicWithProgress(
@@ -192,6 +208,7 @@ class HabitRepository(
         revisionHour: Int,
         revisionMinute: Int,
         completedDays: Set<Int>,
+        inProgressDays: Set<Int>,
         nowMillis: Long
     ): List<RevisionDayProgress> {
         val todayStart = todayStartMillis(nowMillis)
@@ -207,6 +224,7 @@ class HabitRepository(
             val overdueAtMillis = dueDayStart + oneDayMillis
             val state = when {
                 completedDays.contains(day) -> RevisionDayState.Completed
+                inProgressDays.contains(day) -> RevisionDayState.InProgress
                 previousDays.any { it !in completedDays } -> RevisionDayState.Locked
                 todayStart >= overdueAtMillis -> RevisionDayState.Overdue
                 todayStart >= dueDayStart -> RevisionDayState.Active
@@ -315,11 +333,12 @@ class HabitRepository(
         return id
     }
 
-    suspend fun completeActiveRevision(topicId: String): Int? {
+    suspend fun startRevision(topicId: String): Int? {
         val revisionsCollection = currentUserRevisionsCollection() ?: return null
         val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
         val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
         val completedDays = topic.completedDays.map { it.toInt() }.toSet()
+        val inProgressDays = topic.inProgressDays.map { it.toInt() }.toSet()
         val now = Calendar.getInstance().timeInMillis
         val todayStart = todayStartMillis(now)
 
@@ -333,14 +352,35 @@ class HabitRepository(
             )
             val dueDayStart = todayStartMillis(dueDateMillis)
             day !in completedDays &&
+                day !in inProgressDays &&
                 previousDays.all { it in completedDays } &&
                 todayStart >= dueDayStart
         } ?: return null
 
         revisionsCollection.document(topicId)
-            .update("completedDays", FieldValue.arrayUnion(nextActiveDay.toLong()))
+            .update("inProgressDays", FieldValue.arrayUnion(nextActiveDay.toLong()))
             .awaitResult()
         return nextActiveDay
+    }
+
+    suspend fun completeActiveRevision(topicId: String): Int? {
+        val revisionsCollection = currentUserRevisionsCollection() ?: return null
+        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
+        val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
+        val inProgressDays = topic.inProgressDays.map { it.toInt() }.toSet()
+
+        val dayToComplete = revisionScheduleDays.firstOrNull { it in inProgressDays }
+            ?: return null
+
+        revisionsCollection.document(topicId)
+            .update(
+                mapOf(
+                    "completedDays" to FieldValue.arrayUnion(dayToComplete.toLong()),
+                    "inProgressDays" to FieldValue.arrayRemove(dayToComplete.toLong())
+                )
+            )
+            .awaitResult()
+        return dayToComplete
     }
 
     suspend fun resetRevisionTopicFromToday(topicId: String): Boolean {
@@ -351,7 +391,8 @@ class HabitRepository(
             .set(
                 topic.copy(
                     startDateMillis = todayStartMillis(),
-                    completedDays = emptyList()
+                    completedDays = emptyList(),
+                    inProgressDays = emptyList()
                 )
             )
             .awaitResult()
@@ -492,7 +533,8 @@ class HabitRepository(
         val startDateMillis: Long = 0L,
         val startHour: Int = 0,
         val startMinute: Int = 0,
-        val completionDates: List<Long> = emptyList()
+        val completionDates: List<Long> = emptyList(),
+        val inProgressDates: List<Long> = emptyList()
     )
 
     private data class RevisionTopicDocument(
@@ -502,7 +544,8 @@ class HabitRepository(
         val startDateMillis: Long = 0L,
         val revisionHour: Int = 0,
         val revisionMinute: Int = 0,
-        val completedDays: List<Long> = emptyList()
+        val completedDays: List<Long> = emptyList(),
+        val inProgressDays: List<Long> = emptyList()
     )
 
     private companion object {
@@ -513,10 +556,16 @@ class HabitRepository(
     }
 }
 
+enum class HabitCompletionState {
+    NotStarted,
+    InProgress,
+    Completed
+}
+
 data class HabitWithCompletion(
     val id: String,
     val name: String,
-    val completedToday: Boolean,
+    val state: HabitCompletionState,
     val startHour: Int,
     val startMinute: Int,
     val missedDaysCount: Int = 0,
@@ -537,6 +586,7 @@ data class HabitWithStats(
 
 enum class RevisionDayState {
     Completed,
+    InProgress,
     Active,
     Overdue,
     Locked
@@ -558,11 +608,14 @@ data class RevisionTopicWithProgress(
     val activeDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.Active }?.day
 
+    val inProgressDay: Int?
+        get() = dayStates.firstOrNull { it.state == RevisionDayState.InProgress }?.day
+
     val overdueDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.Overdue }?.day
 
     val actionableDay: Int?
-        get() = overdueDay ?: activeDay
+        get() = overdueDay ?: inProgressDay ?: activeDay
 
     val requiresAttention: Boolean
         get() = actionableDay != null

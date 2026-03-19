@@ -33,7 +33,8 @@ service cloud.firestore {
         'startDateMillis',
         'startHour',
         'startMinute',
-        'completionDates'
+        'completionDates',
+        'inProgressDates'
       ]) &&
       request.resource.data.id == habitId &&
       request.resource.data.name is string &&
@@ -52,7 +53,8 @@ service cloud.firestore {
         'startDateMillis',
         'revisionHour',
         'revisionMinute',
-        'completedDays'
+        'completedDays',
+        'inProgressDays'
       ]) &&
       request.resource.data.id == topicId &&
       request.resource.data.name is string &&
@@ -61,6 +63,25 @@ service cloud.firestore {
       request.resource.data.revisionHour is int &&
       request.resource.data.revisionMinute is int &&
       request.resource.data.completedDays is list;
+    }
+
+    function validNotificationToken(tokenId) {
+      return request.resource.data.keys().hasOnly([
+        'installationId',
+        'token',
+        'platform',
+        'deviceModel',
+        'appPackage',
+        'createdAtMillis',
+        'updatedAtMillis'
+      ]) &&
+      request.resource.data.installationId == tokenId &&
+      request.resource.data.token is string &&
+      request.resource.data.platform is string &&
+      request.resource.data.deviceModel is string &&
+      request.resource.data.appPackage is string &&
+      request.resource.data.createdAtMillis is int &&
+      request.resource.data.updatedAtMillis is int;
     }
 
     match /users/{userId} {
@@ -77,6 +98,12 @@ service cloud.firestore {
       match /revisionTopics/{topicId} {
         allow read: if isOwner(userId);
         allow create, update: if isOwner(userId) && validRevisionTopic(topicId);
+        allow delete: if isOwner(userId);
+      }
+
+      match /notificationTokens/{tokenId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validNotificationToken(tokenId);
         allow delete: if isOwner(userId);
       }
     }

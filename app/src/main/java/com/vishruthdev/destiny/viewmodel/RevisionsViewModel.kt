@@ -114,6 +114,12 @@ class RevisionsViewModel(
         }
     }
 
+    fun startRevision(topicId: String) {
+        viewModelScope.launch {
+            repository.startRevision(topicId)
+        }
+    }
+
     fun completeRevision(topicId: String) {
         viewModelScope.launch {
             repository.completeActiveRevision(topicId)

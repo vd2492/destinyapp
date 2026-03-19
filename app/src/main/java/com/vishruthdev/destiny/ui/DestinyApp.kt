@@ -44,6 +44,8 @@ fun DestinyApp(
     onThemeToggle: () -> Unit = {},
     authRepository: AuthRepository? = null
 ) {
+    NotificationPermissionEffect()
+
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as DestinyApplication
     val repository = app.habitRepository

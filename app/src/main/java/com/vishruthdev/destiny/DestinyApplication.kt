@@ -5,6 +5,11 @@ import com.vishruthdev.destiny.data.AuthRepository
 import com.vishruthdev.destiny.data.HabitRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.vishruthdev.destiny.push.PushTokenRepository
+import com.vishruthdev.destiny.push.PushTokenSyncManager
+import com.vishruthdev.destiny.reminder.ReminderNotificationManager
+import com.vishruthdev.destiny.reminder.ReminderScheduleManager
+import com.vishruthdev.destiny.reminder.ReminderScheduler
 
 class DestinyApplication : Application() {
 
@@ -14,6 +19,9 @@ class DestinyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         firebaseConfig = FirebaseInitializer.initialize(this)
+        ReminderNotificationManager.createChannel(this)
+        pushTokenSyncManager.start()
+        reminderScheduleManager.start()
     }
 
     private val firebaseAuth: FirebaseAuth? by lazy {
@@ -38,6 +46,33 @@ class DestinyApplication : Application() {
             firebaseConfig = firebaseConfig,
             firebaseAuth = firebaseAuth,
             firestore = firestore
+        )
+    }
+
+    val pushTokenRepository: PushTokenRepository by lazy {
+        PushTokenRepository(
+            context = this,
+            firebaseConfig = firebaseConfig,
+            firebaseAuth = firebaseAuth,
+            firestore = firestore
+        )
+    }
+
+    private val pushTokenSyncManager: PushTokenSyncManager by lazy {
+        PushTokenSyncManager(
+            firebaseAuth = firebaseAuth,
+            pushTokenRepository = pushTokenRepository
+        )
+    }
+
+    private val reminderScheduler: ReminderScheduler by lazy {
+        ReminderScheduler(this)
+    }
+
+    private val reminderScheduleManager: ReminderScheduleManager by lazy {
+        ReminderScheduleManager(
+            habitRepository = habitRepository,
+            reminderScheduler = reminderScheduler
         )
     }
 }

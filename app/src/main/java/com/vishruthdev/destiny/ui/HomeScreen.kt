@@ -46,10 +46,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vishruthdev.destiny.data.HabitCompletionState
 import com.vishruthdev.destiny.data.RevisionDayState
 import com.vishruthdev.destiny.data.RevisionTopicWithProgress
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import com.vishruthdev.destiny.ui.theme.DestinyCompletedGreen
+import com.vishruthdev.destiny.ui.theme.DestinyInProgressOrange
 import com.vishruthdev.destiny.ui.theme.DestinyLockedGrey
 import com.vishruthdev.destiny.ui.theme.DestinyMissedRed
 import com.vishruthdev.destiny.viewmodel.HabitUiState
@@ -120,6 +122,7 @@ fun HomeScreen(
             hasRevisionTopics = state.hasRevisionTopics,
             onViewAllClick = onNavigateToRevisions,
             onAddTopicClick = onNavigateToRevisions,
+            onStartRevision = viewModel::startRevision,
             onCompleteRevision = viewModel::completeRevision,
             onResetRevision = { topicToReset = it }
         )
@@ -322,25 +325,25 @@ private fun AllCompletedAlert(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (countdownSeconds >= 0) {
+            if (countdownSeconds >= 0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
                         text = "${countdownSeconds}s",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        text = "Undo all",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = DestinyAccentBlue,
+                        modifier = Modifier.clickable(onClick = onUndoAll)
+                    )
                 }
-                Text(
-                    text = "Undo all",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = DestinyAccentBlue,
-                    modifier = Modifier.clickable(onClick = onUndoAll)
-                )
             }
         }
     }
@@ -400,12 +403,13 @@ private fun TodaysHabitsSection(
             habits.forEachIndexed { index, habit ->
                 HabitRow(
                     label = habit.label,
-                    checked = habit.completed,
+                    state = habit.state,
                     timeLabel = formatTime(habit.startHour, habit.startMinute),
-                    missedLabel = formatMissedHabitLabel(
-                        missedDaysCount = habit.missedDaysCount,
-                        latestMissedDateMillis = habit.latestMissedDateMillis
-                    ),
+                    missedLabel = if (habit.state == HabitCompletionState.Completed) null
+                        else formatMissedHabitLabel(
+                            missedDaysCount = habit.missedDaysCount,
+                            latestMissedDateMillis = habit.latestMissedDateMillis
+                        ),
                     onClick = { onHabitToggle(habit.id) }
                 )
                 if (index < habits.lastIndex) {
@@ -419,7 +423,7 @@ private fun TodaysHabitsSection(
 @Composable
 private fun HabitRow(
     label: String,
-    checked: Boolean,
+    state: HabitCompletionState,
     timeLabel: String,
     missedLabel: String?,
     onClick: () -> Unit = {}
@@ -436,18 +440,28 @@ private fun HabitRow(
                 .size(24.dp)
                 .clip(CircleShape)
                 .then(
-                    if (checked) Modifier.background(DestinyCompletedGreen)
-                    else Modifier.border(2.dp, DestinyLockedGrey, CircleShape)
+                    when (state) {
+                        HabitCompletionState.Completed -> Modifier.background(DestinyCompletedGreen)
+                        HabitCompletionState.InProgress -> Modifier.background(DestinyInProgressOrange)
+                        HabitCompletionState.NotStarted -> Modifier.border(2.dp, DestinyLockedGrey, CircleShape)
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
-            if (checked) {
-                Icon(
+            when (state) {
+                HabitCompletionState.Completed -> Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
                     tint = Color.White
                 )
+                HabitCompletionState.InProgress -> Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+                HabitCompletionState.NotStarted -> Unit
             }
         }
         Column {
@@ -480,6 +494,7 @@ private fun DueRevisionsSection(
     hasRevisionTopics: Boolean,
     onViewAllClick: () -> Unit,
     onAddTopicClick: () -> Unit,
+    onStartRevision: (String) -> Unit,
     onCompleteRevision: (String) -> Unit,
     onResetRevision: (RevisionTopicWithProgress) -> Unit
 ) {
@@ -529,6 +544,7 @@ private fun DueRevisionsSection(
                 visibleRevisions.forEachIndexed { index, topic ->
                     RevisionCard(
                         topic = topic,
+                        onStartRevision = { onStartRevision(topic.id) },
                         onMarkComplete = { onCompleteRevision(topic.id) },
                         onResetFromToday = { onResetRevision(topic) }
                     )
@@ -572,21 +588,26 @@ private fun DueRevisionsHeader(
 @Composable
 private fun RevisionCard(
     topic: RevisionTopicWithProgress,
+    onStartRevision: () -> Unit,
     onMarkComplete: () -> Unit,
     onResetFromToday: () -> Unit
 ) {
     val isOverdue = topic.overdueDay != null
+    val isInProgress = topic.inProgressDay != null
     val statusLabel = when {
+        topic.inProgressDay != null -> "In Progress Day ${topic.inProgressDay}"
         topic.overdueDay != null -> "Overdue Day ${topic.overdueDay}"
         topic.activeDay != null -> "Due Day ${topic.activeDay}"
         else -> "Planned"
     }
     val statusColor = when {
+        topic.inProgressDay != null -> DestinyInProgressOrange
         topic.overdueDay != null -> DestinyMissedRed
         topic.activeDay != null -> DestinyAccentBlue
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val statusContainerColor = when {
+        topic.inProgressDay != null -> DestinyInProgressOrange.copy(alpha = 0.16f)
         topic.overdueDay != null -> DestinyMissedRed.copy(alpha = 0.16f)
         topic.activeDay != null -> DestinyAccentBlue.copy(alpha = 0.2f)
         else -> MaterialTheme.colorScheme.surfaceVariant
@@ -642,13 +663,13 @@ private fun RevisionCard(
             }
             actionDay?.let { dueDay ->
                 Spacer(modifier = Modifier.height(14.dp))
-                if (isOverdue) {
+                if (isOverdue && !isInProgress) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
-                            onClick = onMarkComplete,
+                            onClick = onStartRevision,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(
@@ -656,13 +677,6 @@ private fun RevisionCard(
                                 color = DestinyMissedRed
                             )
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = DestinyMissedRed
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Catch up Day $dueDay",
                                 color = DestinyMissedRed
@@ -683,24 +697,38 @@ private fun RevisionCard(
                             )
                         }
                     }
-                } else {
+                } else if (isInProgress) {
                     OutlinedButton(
                         onClick = onMarkComplete,
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(
                             width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = DestinyInProgressOrange
                         )
                     ) {
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
+                            tint = DestinyInProgressOrange
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Mark Day $dueDay done",
+                            color = DestinyInProgressOrange
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onStartRevision,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    ) {
+                        Text(
+                            text = "Start Day $dueDay",
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -717,6 +745,7 @@ private fun RevisionConnectorLine(
 ) {
     val lineColor = when {
         fromState == RevisionDayState.Completed && toState == RevisionDayState.Completed -> DestinyCompletedGreen
+        fromState == RevisionDayState.InProgress || toState == RevisionDayState.InProgress -> DestinyInProgressOrange
         fromState == RevisionDayState.Overdue || toState == RevisionDayState.Overdue -> DestinyMissedRed
         fromState == RevisionDayState.Active || toState == RevisionDayState.Active -> DestinyAccentBlue
         else -> DestinyLockedGrey
@@ -737,23 +766,26 @@ private fun RevisionDayNode(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val (backgroundColor, contentColor) = when (state) {
             RevisionDayState.Completed -> DestinyCompletedGreen to Color.White
+            RevisionDayState.InProgress -> DestinyInProgressOrange to Color.White
             RevisionDayState.Active -> Color.Transparent to DestinyAccentBlue
             RevisionDayState.Overdue -> Color.Transparent to DestinyMissedRed
             RevisionDayState.Locked -> Color.Transparent to DestinyLockedGrey
         }
         val borderColor = when (state) {
             RevisionDayState.Completed -> DestinyCompletedGreen
+            RevisionDayState.InProgress -> DestinyInProgressOrange
             RevisionDayState.Active -> DestinyAccentBlue
             RevisionDayState.Overdue -> DestinyMissedRed
             RevisionDayState.Locked -> DestinyLockedGrey
         }
+        val isFilled = state == RevisionDayState.Completed || state == RevisionDayState.InProgress
 
         Box(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
                 .then(
-                    if (state == RevisionDayState.Completed) Modifier.background(backgroundColor)
+                    if (isFilled) Modifier.background(backgroundColor)
                     else Modifier.border(2.dp, borderColor, CircleShape)
                 ),
             contentAlignment = Alignment.Center
@@ -764,6 +796,12 @@ private fun RevisionDayNode(
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = contentColor
+                )
+                RevisionDayState.InProgress -> Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
                 )
                 RevisionDayState.Overdue -> Text(
                     text = "$day",
@@ -784,6 +822,7 @@ private fun RevisionDayNode(
             text = "Day $day",
             style = MaterialTheme.typography.labelSmall,
             color = when (state) {
+                RevisionDayState.InProgress -> DestinyInProgressOrange
                 RevisionDayState.Active -> DestinyAccentBlue
                 RevisionDayState.Overdue -> DestinyMissedRed
                 else -> MaterialTheme.colorScheme.onSurface
