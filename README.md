@@ -10,7 +10,7 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - Create daily habits with custom start dates and times
 - Three-state completion: Not Started → In Progress → Completed
 - Streak tracking and 30-day completion rate
-- Missed day detection with visual indicators
+- Auto-reset on miss — if you skip a day, the habit restarts from Day 1 the next day
 
 **Spaced Revision (1-2-4-7)**
 - Schedule revision topics with automatic day spacing (Day 1, 2, 4, 7)
@@ -60,9 +60,13 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - **Tap a third time** to reset it back to **Not Started**
 - When all habits are completed, a celebration message appears with an undo option (10-second countdown)
 
+**Auto-reset on miss:**
+- If you miss a day (don't complete a habit), it automatically restarts from Day 1 the next day
+- Your streak resets to 0 and completion history clears — you're starting fresh
+- This enforces consistency: the only way to build a streak is to never break the chain
+
 **Tracking progress:**
 - Each habit card in the Habits tab shows your **current streak** and **30-day completion rate**
-- Missed days are highlighted in red — if you skip a day, Destiny tracks it and shows how many days you've missed
 
 ### Spaced Revision (1-2-4-7)
 
@@ -99,6 +103,7 @@ Every habit and revision gets two reminders by default:
 ### Tips for Efficient Use
 
 - **Morning routine:** Open the Today tab each morning to see what's due — habits on top, revisions below
+- **Never break the chain:** Missing a single day resets your habit to Day 1 — complete every day to keep your streak alive
 - **Use In Progress:** Mark habits as "In Progress" when you start them, then complete when done — this helps you track what you're actively working on
 - **Don't ignore overdue revisions:** Either catch up or reset — leaving them overdue blocks future days from unlocking
 - **Set realistic times:** Schedule habits at times you'll actually do them — the 10-min + 2-min alarm combo ensures you won't forget

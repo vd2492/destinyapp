@@ -36,21 +36,57 @@ class HabitRepository(
     private val thirtyDaysMillis = 30 * oneDayMillis
     private val revisionScheduleDays = listOf(1, 2, 4, 7)
 
+    /**
+     * Base flow that auto-resets any habit with missed days.
+     * If a day before today was missed, the habit restarts from today
+     * (startDateMillis = today, completionDates and inProgressDates cleared).
+     */
+    private fun habitsFlowWithAutoReset(): Flow<List<HabitDocument>> {
+        return habitsFlow().map { habits ->
+            val now = Calendar.getInstance().timeInMillis
+            val todayStart = todayStartMillis(now)
+            val habitsCollection = currentUserHabitsCollection()
+
+            habits.map { habit ->
+                if (habit.startDateMillis >= todayStart) return@map habit
+
+                val history = calculateHabitHistory(
+                    startDateMillis = habit.startDateMillis,
+                    completionDates = habit.completionDates.toSet(),
+                    nowMillis = now
+                )
+
+                if (history.missedDaysCount > 0) {
+                    habitsCollection?.document(habit.id)?.update(
+                        mapOf(
+                            "startDateMillis" to todayStart,
+                            "completionDates" to emptyList<Long>(),
+                            "inProgressDates" to emptyList<Long>()
+                        )
+                    )?.awaitResult()
+
+                    // Return reset data immediately so UI doesn't flicker
+                    habit.copy(
+                        startDateMillis = todayStart,
+                        completionDates = emptyList(),
+                        inProgressDates = emptyList()
+                    )
+                } else {
+                    habit
+                }
+            }
+        }
+    }
+
     /** All habits with today's completion status for the home screen. */
     fun getTodayHabitsWithCompletion(): Flow<List<HabitWithCompletion>> {
-        return habitsFlow().map { habits ->
+        return habitsFlowWithAutoReset().map { habits ->
             val now = Calendar.getInstance().timeInMillis
             val todayStart = todayStartMillis(now)
             habits
                 .filter { habit -> habit.startDateMillis <= todayStart }
                 .map { habit ->
                     val completionDates = habit.completionDates.toSet()
-                    val history = calculateHabitHistory(
-                        startDateMillis = habit.startDateMillis,
-                        completionDates = completionDates,
-                        nowMillis = now
-                    )
-
                     val inProgressDates = habit.inProgressDates.toSet()
                     val todayState = when {
                         todayStart in completionDates -> HabitCompletionState.Completed
@@ -64,8 +100,8 @@ class HabitRepository(
                         state = todayState,
                         startHour = habit.startHour,
                         startMinute = habit.startMinute,
-                        missedDaysCount = history.missedDaysCount,
-                        latestMissedDateMillis = history.latestMissedDateMillis,
+                        missedDaysCount = 0,
+                        latestMissedDateMillis = null,
                         alarmEnabled = habit.alarmEnabled
                     )
                 }
@@ -74,7 +110,7 @@ class HabitRepository(
 
     /** All habits with streak and 30-day completion rate for the Habits screen. */
     fun getHabitsWithStats(): Flow<List<HabitWithStats>> {
-        return habitsFlow().map { habits ->
+        return habitsFlowWithAutoReset().map { habits ->
             val now = Calendar.getInstance().timeInMillis
             habits.map { habit ->
                 val completionDates = habit.completionDates.toSet()
@@ -92,11 +128,6 @@ class HabitRepository(
                     date >= habit.startDateMillis && date < habit.startDateMillis + thirtyDaysMillis
                 }
                 val completionRate = ((trackedCompletions.toFloat() / 30) * 100).toInt().coerceIn(0, 100)
-                val history = calculateHabitHistory(
-                    startDateMillis = habit.startDateMillis,
-                    completionDates = completionDates,
-                    nowMillis = now
-                )
 
                 HabitWithStats(
                     id = habit.id,
@@ -106,8 +137,8 @@ class HabitRepository(
                     startDateMillis = habit.startDateMillis,
                     startHour = habit.startHour,
                     startMinute = habit.startMinute,
-                    missedDaysCount = history.missedDaysCount,
-                    latestMissedDateMillis = history.latestMissedDateMillis,
+                    missedDaysCount = 0,
+                    latestMissedDateMillis = null,
                     alarmEnabled = habit.alarmEnabled
                 )
             }
