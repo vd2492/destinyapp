@@ -142,7 +142,6 @@ class ReminderScheduler(context: Context) {
                 RevisionDayState.Completed -> continue
                 RevisionDayState.Active -> return dayProgress.day
                 RevisionDayState.InProgress -> return dayProgress.day
-                RevisionDayState.Overdue -> return null
                 RevisionDayState.Locked -> {
                     val allPreviousCompleted = revision.dayStates
                         .filter { it.day < dayProgress.day }

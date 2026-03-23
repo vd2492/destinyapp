@@ -43,8 +43,10 @@ class RevisionsViewModel(
                 _state.update {
                     it.copy(
                         topics = topics.sortedWith(
-                            compareByDescending<RevisionTopicWithProgress> { topic -> topic.overdueDay != null }
+                            compareByDescending<RevisionTopicWithProgress> { topic -> topic.requiresAttention }
+                                .thenByDescending { topic -> topic.inProgressDay != null }
                                 .thenByDescending { topic -> topic.activeDay != null }
+                                .thenBy { topic -> topic.actionableDay ?: Int.MAX_VALUE }
                         )
                     )
                 }
@@ -124,12 +126,6 @@ class RevisionsViewModel(
     fun completeRevision(topicId: String) {
         viewModelScope.launch {
             repository.completeActiveRevision(topicId)
-        }
-    }
-
-    fun resetRevisionFromToday(topicId: String) {
-        viewModelScope.launch {
-            repository.resetRevisionTopicFromToday(topicId)
         }
     }
 

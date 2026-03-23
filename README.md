@@ -15,7 +15,7 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 **Spaced Revision (1-2-4-7)**
 - Schedule revision topics with automatic day spacing (Day 1, 2, 4, 7)
 - Smart progression — complete previous days before moving forward
-- Overdue detection with catch-up or reset options
+- Auto-restart on miss — if you skip a revision day, the plan restarts from Day 1 on the current day
 
 **Reminders**
 - 10-minute notification before each habit/revision
@@ -83,10 +83,9 @@ The 1-2-4-7 method is a spaced repetition technique: after learning something, y
   - **Active** (blue outline) — ready to revise today
   - **In Progress** (orange filled) — revision started
   - **Completed** (green checkmark) — done
-  - **Overdue** (red) — you missed the scheduled day
 - Tap **Start Day X** to begin a revision (moves to In Progress)
 - Tap **Mark Day X done** to complete it (moves to Completed, unlocks the next day)
-- If a revision is overdue, you can **Catch up** or **Reset from today** to restart the schedule
+- If you miss any revision day, the topic automatically restarts from **Day 1** on the current day
 
 ### Reminders & Alarms
 
@@ -105,7 +104,7 @@ Every habit and revision gets two reminders by default:
 - **Morning routine:** Open the Today tab each morning to see what's due — habits on top, revisions below
 - **Never break the chain:** Missing a single day resets your habit to Day 1 — complete every day to keep your streak alive
 - **Use In Progress:** Mark habits as "In Progress" when you start them, then complete when done — this helps you track what you're actively working on
-- **Don't ignore overdue revisions:** Either catch up or reset — leaving them overdue blocks future days from unlocking
+- **Stay consistent with revisions:** Missing any scheduled revision day restarts the 1-2-4-7 plan from Day 1 on the current day
 - **Set realistic times:** Schedule habits at times you'll actually do them — the 10-min + 2-min alarm combo ensures you won't forget
 - **Review the Habits tab weekly:** Check your streaks and completion rates to see which habits need more attention
 

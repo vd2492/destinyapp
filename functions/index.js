@@ -71,7 +71,7 @@ exports.sendReminderNotifications = onSchedule("* * * * *", async () => {
       continue;
     }
 
-    const data = document.data();
+    const data = await normalizeRevisionTopic(document.ref, document.data(), nowMillis);
     const reminder = findRevisionReminderInWindow(data, nowMillis);
     if (!reminder) {
       continue;
@@ -182,6 +182,76 @@ function findRevisionReminderInWindow(topic, nowMillis) {
     day: nextDay,
     dueAtMillis,
   };
+}
+
+async function normalizeRevisionTopic(documentRef, topic, nowMillis) {
+  const missedDay = findMissedRevisionDay(topic, nowMillis);
+  if (!missedDay) {
+    return topic;
+  }
+
+  const restartStartDateMillis = currentRevisionDayStart(topic.startDateMillis, nowMillis);
+  await documentRef.set({
+    startDateMillis: restartStartDateMillis,
+    completedDays: [],
+    inProgressDays: [],
+  }, { merge: true });
+
+  logger.debug("Restarted revision topic after missed day", {
+    topicId: documentRef.id,
+    missedDay,
+    restartStartDateMillis,
+  });
+
+  return {
+    ...topic,
+    startDateMillis: restartStartDateMillis,
+    completedDays: [],
+    inProgressDays: [],
+  };
+}
+
+function findMissedRevisionDay(topic, nowMillis) {
+  if (!Number.isInteger(topic.startDateMillis)) {
+    return null;
+  }
+
+  const completedDays = new Set(
+    Array.isArray(topic.completedDays)
+      ? topic.completedDays
+          .map((value) => Number(value))
+          .filter((day) => REVISION_DAYS.includes(day))
+      : []
+  );
+
+  for (const day of REVISION_DAYS) {
+    if (completedDays.has(day)) {
+      continue;
+    }
+
+    const previousDays = REVISION_DAYS.filter((previousDay) => previousDay < day);
+    if (!previousDays.every((previousDay) => completedDays.has(previousDay))) {
+      return null;
+    }
+
+    const dueDayStart = topic.startDateMillis + ((day - 1) * ONE_DAY_MS);
+    return nowMillis >= dueDayStart + ONE_DAY_MS ? day : null;
+  }
+
+  return null;
+}
+
+function currentRevisionDayStart(startDateMillis, nowMillis) {
+  if (!Number.isInteger(startDateMillis)) {
+    return nowMillis;
+  }
+
+  if (nowMillis <= startDateMillis) {
+    return startDateMillis;
+  }
+
+  const elapsedDays = Math.floor((nowMillis - startDateMillis) / ONE_DAY_MS);
+  return startDateMillis + (elapsedDays * ONE_DAY_MS);
 }
 
 function isInsideReminderWindow(triggerAtMillis, dueAtMillis, nowMillis) {

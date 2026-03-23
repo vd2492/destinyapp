@@ -224,12 +224,27 @@ class HabitRepository(
             ?.awaitResult()
     }
 
-    fun getRevisionTopicsWithProgress(): Flow<List<RevisionTopicWithProgress>> {
+    private fun revisionsFlowWithAutoReset(): Flow<List<RevisionTopicDocument>> {
         return revisionsFlow().map { topics ->
             val now = Calendar.getInstance().timeInMillis
+            val revisionsCollection = currentUserRevisionsCollection()
+
             topics.map { topic ->
-                val completedDays = topic.completedDays.map { it.toInt() }.toSet()
-                val inProgressDays = topic.inProgressDays.map { it.toInt() }.toSet()
+                autoResetRevisionTopicIfMissed(
+                    topic = topic,
+                    nowMillis = now,
+                    revisionsCollection = revisionsCollection
+                )
+            }
+        }
+    }
+
+    fun getRevisionTopicsWithProgress(): Flow<List<RevisionTopicWithProgress>> {
+        return revisionsFlowWithAutoReset().map { topics ->
+            val now = Calendar.getInstance().timeInMillis
+            topics.map { topic ->
+                val completedDays = revisionDaySet(topic.completedDays)
+                val inProgressDays = revisionDaySet(topic.inProgressDays)
                 val dayStates = buildRevisionDayStates(
                     startDateMillis = topic.startDateMillis,
                     revisionHour = topic.revisionHour,
@@ -269,13 +284,11 @@ class HabitRepository(
                 revisionDay = day
             )
             val dueDayStart = todayStartMillis(dueDateMillis)
-            val overdueAtMillis = dueDayStart + oneDayMillis
             val state = when {
                 completedDays.contains(day) -> RevisionDayState.Completed
                 inProgressDays.contains(day) -> RevisionDayState.InProgress
                 previousDays.any { it !in completedDays } -> RevisionDayState.Locked
-                todayStart >= overdueAtMillis -> RevisionDayState.Overdue
-                todayStart >= dueDayStart -> RevisionDayState.Active
+                todayStart in dueDayStart until (dueDayStart + oneDayMillis) -> RevisionDayState.Active
                 else -> RevisionDayState.Locked
             }
             RevisionDayProgress(day = day, state = state)
@@ -383,11 +396,14 @@ class HabitRepository(
 
     suspend fun startRevision(topicId: String): Int? {
         val revisionsCollection = currentUserRevisionsCollection() ?: return null
-        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
-        val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
-        val completedDays = topic.completedDays.map { it.toInt() }.toSet()
-        val inProgressDays = topic.inProgressDays.map { it.toInt() }.toSet()
         val now = Calendar.getInstance().timeInMillis
+        val topic = getRevisionTopicForToday(
+            topicId = topicId,
+            revisionsCollection = revisionsCollection,
+            nowMillis = now
+        ) ?: return null
+        val completedDays = revisionDaySet(topic.completedDays)
+        val inProgressDays = revisionDaySet(topic.inProgressDays)
         val todayStart = todayStartMillis(now)
 
         val nextActiveDay = revisionScheduleDays.firstOrNull { day ->
@@ -402,7 +418,7 @@ class HabitRepository(
             day !in completedDays &&
                 day !in inProgressDays &&
                 previousDays.all { it in completedDays } &&
-                todayStart >= dueDayStart
+                todayStart in dueDayStart until (dueDayStart + oneDayMillis)
         } ?: return null
 
         revisionsCollection.document(topicId)
@@ -413,9 +429,12 @@ class HabitRepository(
 
     suspend fun completeActiveRevision(topicId: String): Int? {
         val revisionsCollection = currentUserRevisionsCollection() ?: return null
-        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
-        val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
-        val inProgressDays = topic.inProgressDays.map { it.toInt() }.toSet()
+        val topic = getRevisionTopicForToday(
+            topicId = topicId,
+            revisionsCollection = revisionsCollection,
+            nowMillis = Calendar.getInstance().timeInMillis
+        ) ?: return null
+        val inProgressDays = revisionDaySet(topic.inProgressDays)
 
         val dayToComplete = revisionScheduleDays.firstOrNull { it in inProgressDays }
             ?: return null
@@ -431,22 +450,6 @@ class HabitRepository(
         return dayToComplete
     }
 
-    suspend fun resetRevisionTopicFromToday(topicId: String): Boolean {
-        val revisionsCollection = currentUserRevisionsCollection() ?: return false
-        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
-        val topic = topicSnapshot.toRevisionTopicDocument() ?: return false
-        revisionsCollection.document(topicId)
-            .set(
-                topic.copy(
-                    startDateMillis = todayStartMillis(),
-                    completedDays = emptyList(),
-                    inProgressDays = emptyList()
-                )
-            )
-            .awaitResult()
-        return true
-    }
-
     suspend fun deleteRevisionTopic(topicId: String) {
         currentUserRevisionsCollection()
             ?.document(topicId)
@@ -457,6 +460,87 @@ class HabitRepository(
     suspend fun clearAll() {
         deleteAllDocuments(currentUserHabitsCollection())
         deleteAllDocuments(currentUserRevisionsCollection())
+    }
+
+    private suspend fun getRevisionTopicForToday(
+        topicId: String,
+        revisionsCollection: com.google.firebase.firestore.CollectionReference,
+        nowMillis: Long
+    ): RevisionTopicDocument? {
+        val topicSnapshot = revisionsCollection.document(topicId).get().awaitResult()
+        val topic = topicSnapshot.toRevisionTopicDocument() ?: return null
+        return autoResetRevisionTopicIfMissed(
+            topic = topic,
+            nowMillis = nowMillis,
+            revisionsCollection = revisionsCollection
+        )
+    }
+
+    private suspend fun autoResetRevisionTopicIfMissed(
+        topic: RevisionTopicDocument,
+        nowMillis: Long,
+        revisionsCollection: com.google.firebase.firestore.CollectionReference?
+    ): RevisionTopicDocument {
+        val missedDay = findMissedRevisionDay(
+            startDateMillis = topic.startDateMillis,
+            revisionHour = topic.revisionHour,
+            revisionMinute = topic.revisionMinute,
+            completedDays = revisionDaySet(topic.completedDays),
+            nowMillis = nowMillis
+        ) ?: return topic
+
+        val todayStart = todayStartMillis(nowMillis)
+        revisionsCollection?.document(topic.id)?.update(
+            mapOf(
+                "startDateMillis" to todayStart,
+                "completedDays" to emptyList<Long>(),
+                "inProgressDays" to emptyList<Long>()
+            )
+        )?.awaitResult()
+
+        Log.d(TAG, "Revision ${topic.id} missed day $missedDay; restarting from today")
+        return topic.copy(
+            startDateMillis = todayStart,
+            completedDays = emptyList(),
+            inProgressDays = emptyList()
+        )
+    }
+
+    private fun findMissedRevisionDay(
+        startDateMillis: Long,
+        revisionHour: Int,
+        revisionMinute: Int,
+        completedDays: Set<Int>,
+        nowMillis: Long
+    ): Int? {
+        val todayStart = todayStartMillis(nowMillis)
+
+        for (day in revisionScheduleDays) {
+            if (day in completedDays) continue
+
+            val previousDays = revisionScheduleDays.takeWhile { it < day }
+            if (previousDays.any { it !in completedDays }) {
+                return null
+            }
+
+            val dueAtMillis = calculateRevisionDueAt(
+                startDateMillis = startDateMillis,
+                revisionHour = revisionHour,
+                revisionMinute = revisionMinute,
+                revisionDay = day
+            )
+            val dueDayStart = todayStartMillis(dueAtMillis)
+            return day.takeIf { todayStart >= dueDayStart + oneDayMillis }
+        }
+
+        return null
+    }
+
+    private fun revisionDaySet(days: List<Long>): Set<Int> {
+        return days
+            .map { it.toInt() }
+            .filter { it in revisionScheduleDays }
+            .toSet()
     }
 
     private suspend fun deleteAllDocuments(collection: com.google.firebase.firestore.CollectionReference?) {
@@ -640,7 +724,6 @@ enum class RevisionDayState {
     Completed,
     InProgress,
     Active,
-    Overdue,
     Locked
 }
 
@@ -664,11 +747,8 @@ data class RevisionTopicWithProgress(
     val inProgressDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.InProgress }?.day
 
-    val overdueDay: Int?
-        get() = dayStates.firstOrNull { it.state == RevisionDayState.Overdue }?.day
-
     val actionableDay: Int?
-        get() = overdueDay ?: inProgressDay ?: activeDay
+        get() = inProgressDay ?: activeDay
 
     val requiresAttention: Boolean
         get() = actionableDay != null

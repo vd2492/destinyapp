@@ -46,9 +46,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,7 +63,6 @@ import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import com.vishruthdev.destiny.ui.theme.DestinyCompletedGreen
 import com.vishruthdev.destiny.ui.theme.DestinyInProgressOrange
 import com.vishruthdev.destiny.ui.theme.DestinyLockedGrey
-import com.vishruthdev.destiny.ui.theme.DestinyMissedRed
 import com.vishruthdev.destiny.viewmodel.RevisionStartOption
 import com.vishruthdev.destiny.viewmodel.RevisionsViewModel
 import java.text.SimpleDateFormat
@@ -80,7 +76,6 @@ fun RevisionsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    var topicToReset by remember { mutableStateOf<RevisionTopicWithProgress?>(null) }
     val filteredTopics = state.topics.filter { topic ->
         state.searchQuery.isBlank() || topic.name.contains(state.searchQuery, ignoreCase = true)
     }
@@ -148,7 +143,6 @@ fun RevisionsScreen(
                         onLongPress = { viewModel.toggleDeleteMode() },
                         onStartRevision = { viewModel.startRevision(topic.id) },
                         onMarkComplete = { viewModel.completeRevision(topic.id) },
-                        onResetFromToday = { topicToReset = topic },
                         onAlarmToggle = { enabled -> viewModel.toggleRevisionAlarm(topic.id, enabled) }
                     )
                 }
@@ -333,17 +327,6 @@ fun RevisionsScreen(
             containerColor = MaterialTheme.colorScheme.surface
         )
     }
-
-    topicToReset?.let { topic ->
-        ResetRevisionDialog(
-            topicName = topic.name,
-            onDismiss = { topicToReset = null },
-            onConfirm = {
-                viewModel.resetRevisionFromToday(topic.id)
-                topicToReset = null
-            }
-        )
-    }
 }
 
 @Composable
@@ -402,7 +385,6 @@ private fun FlippableRevisionCard(
     onLongPress: () -> Unit,
     onStartRevision: () -> Unit,
     onMarkComplete: () -> Unit,
-    onResetFromToday: () -> Unit,
     onAlarmToggle: (Boolean) -> Unit
 ) {
     val rotation by animateFloatAsState(
@@ -431,8 +413,7 @@ private fun FlippableRevisionCard(
                 showDeleteButton = showDeleteButton,
                 onDelete = onDelete,
                 onStartRevision = onStartRevision,
-                onMarkComplete = onMarkComplete,
-                onResetFromToday = onResetFromToday
+                onMarkComplete = onMarkComplete
             )
         } else {
             RevisionCardBack(
@@ -451,16 +432,13 @@ private fun RevisionTopicCard(
     showDeleteButton: Boolean,
     onDelete: () -> Unit,
     onStartRevision: () -> Unit,
-    onMarkComplete: () -> Unit,
-    onResetFromToday: () -> Unit
+    onMarkComplete: () -> Unit
 ) {
-    val isOverdue = topic.overdueDay != null
     val isInProgress = topic.inProgressDay != null
     val actionDay = topic.actionableDay
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (isOverdue) DestinyMissedRed.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
-        border = if (isOverdue) BorderStroke(1.dp, DestinyMissedRed.copy(alpha = 0.35f)) else null
+        color = MaterialTheme.colorScheme.surface
     ) {
         Box {
             if (showDeleteButton) {
@@ -514,7 +492,6 @@ private fun RevisionTopicCard(
                         shape = RoundedCornerShape(12.dp),
                         color = when {
                             isInProgress -> DestinyInProgressOrange.copy(alpha = 0.16f)
-                            topic.overdueDay != null -> DestinyMissedRed.copy(alpha = 0.16f)
                             activeDay != null -> DestinyAccentBlue.copy(alpha = 0.2f)
                             topic.isCompleted -> DestinyCompletedGreen.copy(alpha = 0.2f)
                             else -> MaterialTheme.colorScheme.surfaceVariant
@@ -523,7 +500,6 @@ private fun RevisionTopicCard(
                         Text(
                             text = when {
                                 isInProgress -> "In Progress"
-                                topic.overdueDay != null -> "Overdue"
                                 activeDay != null -> "Due"
                                 topic.isCompleted -> "Done"
                                 else -> "Planned"
@@ -532,7 +508,6 @@ private fun RevisionTopicCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = when {
                                 isInProgress -> DestinyInProgressOrange
-                                topic.overdueDay != null -> DestinyMissedRed
                                 activeDay != null -> DestinyAccentBlue
                                 topic.isCompleted -> DestinyCompletedGreen
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -558,41 +533,7 @@ private fun RevisionTopicCard(
                 }
                 actionDay?.let { dueDay ->
                     Spacer(modifier = Modifier.height(14.dp))
-                    if (isOverdue && !isInProgress) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onStartRevision,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(
-                                    width = 1.dp,
-                                    color = DestinyMissedRed
-                                )
-                            ) {
-                                Text(
-                                    text = "Catch up Day $dueDay",
-                                    color = DestinyMissedRed
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = onResetFromToday,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(
-                                    width = 1.dp,
-                                    color = DestinyMissedRed
-                                )
-                            ) {
-                                Text(
-                                    text = "Reset from today",
-                                    color = DestinyMissedRed
-                                )
-                            }
-                        }
-                    } else if (isInProgress) {
+                    if (isInProgress) {
                         OutlinedButton(
                             onClick = onMarkComplete,
                             shape = RoundedCornerShape(10.dp),
@@ -702,7 +643,6 @@ private fun RevisionConnectorLine(
     val lineColor = when {
         fromState == RevisionDayState.Completed && toState == RevisionDayState.Completed -> DestinyCompletedGreen
         fromState == RevisionDayState.InProgress || toState == RevisionDayState.InProgress -> DestinyInProgressOrange
-        fromState == RevisionDayState.Overdue || toState == RevisionDayState.Overdue -> DestinyMissedRed
         fromState == RevisionDayState.Active || toState == RevisionDayState.Active -> DestinyAccentBlue
         else -> DestinyLockedGrey
     }
@@ -724,14 +664,12 @@ private fun RevisionDayNode(
             RevisionDayState.Completed -> DestinyCompletedGreen to Color.White
             RevisionDayState.InProgress -> DestinyInProgressOrange to Color.White
             RevisionDayState.Active -> Color.Transparent to DestinyAccentBlue
-            RevisionDayState.Overdue -> Color.Transparent to DestinyMissedRed
             RevisionDayState.Locked -> Color.Transparent to DestinyLockedGrey
         }
         val borderColor = when (state) {
             RevisionDayState.Completed -> DestinyCompletedGreen
             RevisionDayState.InProgress -> DestinyInProgressOrange
             RevisionDayState.Active -> DestinyAccentBlue
-            RevisionDayState.Overdue -> DestinyMissedRed
             RevisionDayState.Locked -> DestinyLockedGrey
         }
         val isFilled = state == RevisionDayState.Completed || state == RevisionDayState.InProgress
@@ -759,11 +697,6 @@ private fun RevisionDayNode(
                         .clip(CircleShape)
                         .background(Color.White)
                 )
-                RevisionDayState.Overdue -> Text(
-                    text = "$day",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = contentColor
-                )
                 RevisionDayState.Locked -> Icon(
                     imageVector = Icons.Outlined.Lock,
                     contentDescription = null,
@@ -780,7 +713,6 @@ private fun RevisionDayNode(
             color = when (state) {
                 RevisionDayState.InProgress -> DestinyInProgressOrange
                 RevisionDayState.Active -> DestinyAccentBlue
-                RevisionDayState.Overdue -> DestinyMissedRed
                 else -> MaterialTheme.colorScheme.onSurface
             }
         )

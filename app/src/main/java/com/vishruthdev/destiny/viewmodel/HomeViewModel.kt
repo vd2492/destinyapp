@@ -105,8 +105,9 @@ class HomeViewModel(
                 val dueRevisions = topics
                     .filter { it.requiresAttention }
                     .sortedWith(
-                        compareByDescending<RevisionTopicWithProgress> { it.overdueDay != null }
+                        compareByDescending<RevisionTopicWithProgress> { it.inProgressDay != null }
                             .thenByDescending { it.activeDay != null }
+                            .thenBy { it.actionableDay ?: Int.MAX_VALUE }
                     )
                 _state.update {
                     it.copy(
@@ -162,12 +163,6 @@ class HomeViewModel(
     fun completeRevision(topicId: String) {
         viewModelScope.launch {
             repository.completeActiveRevision(topicId)
-        }
-    }
-
-    fun resetRevisionFromToday(topicId: String) {
-        viewModelScope.launch {
-            repository.resetRevisionTopicFromToday(topicId)
         }
     }
 }
