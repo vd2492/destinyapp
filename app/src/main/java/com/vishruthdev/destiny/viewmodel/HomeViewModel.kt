@@ -26,8 +26,8 @@ data class HabitUiState(
 
 data class HomeUiState(
     val habits: List<HabitUiState>,
-    val dueCount: Int,
-    val totalHabitsCount: Int,
+    val dueHabitsCount: Int,
+    val dueRevisionsCount: Int,
     val progressPercent: Int,
     val dueRevisions: List<RevisionTopicWithProgress> = emptyList(),
     val hasRevisionTopics: Boolean = false,
@@ -42,8 +42,8 @@ class HomeViewModel(
     private val _state = MutableStateFlow(
         HomeUiState(
             habits = emptyList(),
-            dueCount = 0,
-            totalHabitsCount = 0,
+            dueHabitsCount = 0,
+            dueRevisionsCount = 0,
             progressPercent = 0
         )
     )
@@ -68,7 +68,9 @@ class HomeViewModel(
                     )
                 }
                 val total = habits.size
-                val progressPercent = if (total == 0) 0 else (habits.count { it.state == HabitCompletionState.Completed }.toFloat() / total * 100).toInt()
+                val completedHabitsCount = habits.count { it.state == HabitCompletionState.Completed }
+                val dueHabitsCount = habits.count { it.state != HabitCompletionState.Completed }
+                val progressPercent = if (total == 0) 0 else (completedHabitsCount.toFloat() / total * 100).toInt()
                 val allCompleted = total > 0 && progressPercent == 100
 
                 celebrationJob?.cancel()
@@ -93,7 +95,7 @@ class HomeViewModel(
                 _state.update {
                     it.copy(
                         habits = habits,
-                        totalHabitsCount = total,
+                        dueHabitsCount = dueHabitsCount,
                         progressPercent = progressPercent
                     )
                 }
@@ -111,7 +113,7 @@ class HomeViewModel(
                     )
                 _state.update {
                     it.copy(
-                        dueCount = dueRevisions.size,
+                        dueRevisionsCount = dueRevisions.size,
                         dueRevisions = dueRevisions,
                         hasRevisionTopics = topics.isNotEmpty()
                     )

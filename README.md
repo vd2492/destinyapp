@@ -44,6 +44,7 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 1. **Sign in** with your Google account on the login screen
 2. You land on the **Today** tab — your daily dashboard showing today's habits and due revisions
 3. Use the bottom navigation to switch between **Today**, **Habits**, **Revisions**, and **Settings**
+4. The stat cards at the top of the **Today** tab update live as you complete habits or start/finish due revisions
 
 ### Habit Tracking
 
@@ -55,6 +56,7 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 
 **Daily workflow:**
 - Open the **Today** tab to see all habits due for the day
+- The **Due Habits** and **Due Revisions** cards update instantly as you make progress
 - **Tap once** on a habit to mark it **In Progress** (orange dot) — an "In progress" label appears below the name
 - **Tap again** to mark it **Completed** (green checkmark)
 - **Tap a third time** to reset it back to **Not Started**

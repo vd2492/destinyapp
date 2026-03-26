@@ -91,8 +91,8 @@ fun HomeScreen(
         }
         Spacer(modifier = Modifier.height(24.dp))
         StatsCardsRow(
-            dueCount = state.dueCount,
-            totalHabitsCount = state.totalHabitsCount,
+            dueRevisionsCount = state.dueRevisionsCount,
+            dueHabitsCount = state.dueHabitsCount,
             progressPercent = state.progressPercent,
             showAllCompletedState = state.showAllCompletedState
         )
@@ -156,8 +156,8 @@ private fun GreetingSection() {
 
 @Composable
 private fun StatsCardsRow(
-    dueCount: Int,
-    totalHabitsCount: Int,
+    dueRevisionsCount: Int,
+    dueHabitsCount: Int,
     progressPercent: Int,
     showAllCompletedState: Boolean = false
 ) {
@@ -168,14 +168,14 @@ private fun StatsCardsRow(
         StatCard(
             modifier = Modifier.weight(1f),
             label = "Due Revisions",
-            value = "$dueCount",
+            value = "$dueRevisionsCount",
             sublabel = null,
             valueColor = DestinyAccentBlue
         )
         StatCard(
             modifier = Modifier.weight(1f),
             label = "Due Habits",
-            value = "$totalHabitsCount",
+            value = "$dueHabitsCount",
             sublabel = null,
             valueColor = DestinyAccentBlue
         )
