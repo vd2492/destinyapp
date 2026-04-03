@@ -2,6 +2,11 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function keepsCreatedAt() {
+      return resource == null ||
+        request.resource.data.createdAtMillis == resource.data.createdAtMillis;
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -20,9 +25,15 @@ service cloud.firestore {
       ]) &&
       request.resource.data.uid == userId &&
       request.resource.data.email is string &&
+      request.resource.data.email.size() > 0 &&
+      request.resource.data.email.size() <= 320 &&
       request.resource.data.displayName is string &&
+      request.resource.data.displayName.size() > 0 &&
+      request.resource.data.displayName.size() <= 100 &&
       request.resource.data.createdAtMillis is int &&
-      request.resource.data.updatedAtMillis is int;
+      request.resource.data.updatedAtMillis is int &&
+      request.resource.data.updatedAtMillis >= request.resource.data.createdAtMillis &&
+      keepsCreatedAt();
     }
 
     function validHabit(habitId) {
@@ -39,11 +50,26 @@ service cloud.firestore {
       ]) &&
       request.resource.data.id == habitId &&
       request.resource.data.name is string &&
+      request.resource.data.name.size() > 0 &&
+      request.resource.data.name.size() <= 120 &&
       request.resource.data.createdAtMillis is int &&
       request.resource.data.startDateMillis is int &&
       request.resource.data.startHour is int &&
+      request.resource.data.startHour >= 0 &&
+      request.resource.data.startHour <= 23 &&
       request.resource.data.startMinute is int &&
-      request.resource.data.completionDates is list;
+      request.resource.data.startMinute >= 0 &&
+      request.resource.data.startMinute <= 59 &&
+      request.resource.data.completionDates is list &&
+      (
+        !request.resource.data.keys().hasAny(['inProgressDates']) ||
+        request.resource.data.inProgressDates is list
+      ) &&
+      (
+        !request.resource.data.keys().hasAny(['alarmEnabled']) ||
+        request.resource.data.alarmEnabled is bool
+      ) &&
+      keepsCreatedAt();
     }
 
     function validRevisionTopic(topicId) {
@@ -60,11 +86,26 @@ service cloud.firestore {
       ]) &&
       request.resource.data.id == topicId &&
       request.resource.data.name is string &&
+      request.resource.data.name.size() > 0 &&
+      request.resource.data.name.size() <= 120 &&
       request.resource.data.createdAtMillis is int &&
       request.resource.data.startDateMillis is int &&
       request.resource.data.revisionHour is int &&
+      request.resource.data.revisionHour >= 0 &&
+      request.resource.data.revisionHour <= 23 &&
       request.resource.data.revisionMinute is int &&
-      request.resource.data.completedDays is list;
+      request.resource.data.revisionMinute >= 0 &&
+      request.resource.data.revisionMinute <= 59 &&
+      request.resource.data.completedDays is list &&
+      (
+        !request.resource.data.keys().hasAny(['inProgressDays']) ||
+        request.resource.data.inProgressDays is list
+      ) &&
+      (
+        !request.resource.data.keys().hasAny(['alarmEnabled']) ||
+        request.resource.data.alarmEnabled is bool
+      ) &&
+      keepsCreatedAt();
     }
 
     function validNotificationToken(tokenId) {
@@ -78,12 +119,21 @@ service cloud.firestore {
         'updatedAtMillis'
       ]) &&
       request.resource.data.installationId == tokenId &&
+      request.resource.data.installationId is string &&
       request.resource.data.token is string &&
+      request.resource.data.token.size() > 0 &&
+      request.resource.data.token.size() <= 4096 &&
       request.resource.data.platform is string &&
+      request.resource.data.platform == 'android' &&
       request.resource.data.deviceModel is string &&
+      request.resource.data.deviceModel.size() > 0 &&
+      request.resource.data.deviceModel.size() <= 120 &&
       request.resource.data.appPackage is string &&
+      request.resource.data.appPackage == 'com.vishruthdev.destiny' &&
       request.resource.data.createdAtMillis is int &&
-      request.resource.data.updatedAtMillis is int;
+      request.resource.data.updatedAtMillis is int &&
+      request.resource.data.updatedAtMillis >= request.resource.data.createdAtMillis &&
+      keepsCreatedAt();
     }
 
     match /users/{userId} {

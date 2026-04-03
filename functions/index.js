@@ -3,16 +3,17 @@ const { onSchedule } = require("firebase-functions/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { FieldValue, getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const {
+  currentRevisionDayStart,
+  findHabitDueAtInWindow,
+  findMissedRevisionDay,
+  findRevisionReminderInWindow,
+} = require("./reminderLogic");
 
 initializeApp();
 
 const db = getFirestore();
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const REMINDER_LEAD_MS = 10 * 60 * 1000;
-const WINDOW_PAST_MS = 90 * 1000;
-const WINDOW_FUTURE_MS = 30 * 1000;
-const REVISION_DAYS = [1, 2, 4, 7];
 const USERS_COLLECTION = "users";
 const TOKENS_COLLECTION = "notificationTokens";
 const DISPATCHES_COLLECTION = "reminderDispatches";
@@ -112,78 +113,6 @@ function safeName(value, fallback) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function timeOffsetMillis(hour, minute) {
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
-    return null;
-  }
-
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    return null;
-  }
-
-  return ((hour * 60) + minute) * 60 * 1000;
-}
-
-function findHabitDueAtInWindow(habit, nowMillis) {
-  if (!Number.isInteger(habit.startDateMillis)) {
-    return null;
-  }
-
-  const offsetMillis = timeOffsetMillis(habit.startHour, habit.startMinute);
-  if (offsetMillis === null) {
-    return null;
-  }
-
-  const firstDueAtMillis = habit.startDateMillis + offsetMillis;
-  const firstTriggerAtMillis = firstDueAtMillis - REMINDER_LEAD_MS;
-  const approximateIndex = Math.floor((nowMillis - firstTriggerAtMillis) / ONE_DAY_MS);
-  const startIndex = Math.max(0, approximateIndex - 1);
-  const endIndex = Math.max(0, approximateIndex + 1);
-
-  for (let index = startIndex; index <= endIndex; index += 1) {
-    const triggerAtMillis = firstTriggerAtMillis + (index * ONE_DAY_MS);
-    const dueAtMillis = triggerAtMillis + REMINDER_LEAD_MS;
-    if (isInsideReminderWindow(triggerAtMillis, dueAtMillis, nowMillis)) {
-      return dueAtMillis;
-    }
-  }
-
-  return null;
-}
-
-function findRevisionReminderInWindow(topic, nowMillis) {
-  if (!Number.isInteger(topic.startDateMillis)) {
-    return null;
-  }
-
-  const offsetMillis = timeOffsetMillis(topic.revisionHour, topic.revisionMinute);
-  if (offsetMillis === null) {
-    return null;
-  }
-
-  const completedDays = new Set(
-    Array.isArray(topic.completedDays)
-      ? topic.completedDays.map((value) => Number(value))
-      : []
-  );
-  const nextDay = REVISION_DAYS.find((day) => !completedDays.has(day));
-  if (!nextDay) {
-    return null;
-  }
-
-  const dueAtMillis = topic.startDateMillis + ((nextDay - 1) * ONE_DAY_MS) + offsetMillis;
-  const triggerAtMillis = dueAtMillis - REMINDER_LEAD_MS;
-
-  if (!isInsideReminderWindow(triggerAtMillis, dueAtMillis, nowMillis)) {
-    return null;
-  }
-
-  return {
-    day: nextDay,
-    dueAtMillis,
-  };
-}
-
 async function normalizeRevisionTopic(documentRef, topic, nowMillis) {
   const missedDay = findMissedRevisionDay(topic, nowMillis);
   if (!missedDay) {
@@ -209,55 +138,6 @@ async function normalizeRevisionTopic(documentRef, topic, nowMillis) {
     completedDays: [],
     inProgressDays: [],
   };
-}
-
-function findMissedRevisionDay(topic, nowMillis) {
-  if (!Number.isInteger(topic.startDateMillis)) {
-    return null;
-  }
-
-  const completedDays = new Set(
-    Array.isArray(topic.completedDays)
-      ? topic.completedDays
-          .map((value) => Number(value))
-          .filter((day) => REVISION_DAYS.includes(day))
-      : []
-  );
-
-  for (const day of REVISION_DAYS) {
-    if (completedDays.has(day)) {
-      continue;
-    }
-
-    const previousDays = REVISION_DAYS.filter((previousDay) => previousDay < day);
-    if (!previousDays.every((previousDay) => completedDays.has(previousDay))) {
-      return null;
-    }
-
-    const dueDayStart = topic.startDateMillis + ((day - 1) * ONE_DAY_MS);
-    return nowMillis >= dueDayStart + ONE_DAY_MS ? day : null;
-  }
-
-  return null;
-}
-
-function currentRevisionDayStart(startDateMillis, nowMillis) {
-  if (!Number.isInteger(startDateMillis)) {
-    return nowMillis;
-  }
-
-  if (nowMillis <= startDateMillis) {
-    return startDateMillis;
-  }
-
-  const elapsedDays = Math.floor((nowMillis - startDateMillis) / ONE_DAY_MS);
-  return startDateMillis + (elapsedDays * ONE_DAY_MS);
-}
-
-function isInsideReminderWindow(triggerAtMillis, dueAtMillis, nowMillis) {
-  const windowStart = nowMillis - WINDOW_PAST_MS;
-  const windowEnd = nowMillis + WINDOW_FUTURE_MS;
-  return triggerAtMillis >= windowStart && triggerAtMillis < windowEnd && dueAtMillis > nowMillis;
 }
 
 async function sendReminderIfPossible({

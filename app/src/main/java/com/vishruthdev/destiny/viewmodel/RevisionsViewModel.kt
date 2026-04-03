@@ -1,10 +1,12 @@
 package com.vishruthdev.destiny.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vishruthdev.destiny.data.HabitRepository
 import com.vishruthdev.destiny.data.RevisionTopicWithProgress
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,18 +41,23 @@ class RevisionsViewModel(
 
     init {
         viewModelScope.launch {
-            repository.getRevisionTopicsWithProgress().collect { topics ->
-                _state.update {
-                    it.copy(
-                        topics = topics.sortedWith(
-                            compareByDescending<RevisionTopicWithProgress> { topic -> topic.requiresAttention }
-                                .thenByDescending { topic -> topic.inProgressDay != null }
-                                .thenByDescending { topic -> topic.activeDay != null }
-                                .thenBy { topic -> topic.actionableDay ?: Int.MAX_VALUE }
-                        )
-                    )
+            repository.getRevisionTopicsWithProgress()
+                .catch { throwable ->
+                    Log.w(TAG, "Failed to load revision topics", throwable)
+                    _state.update { it.copy(topics = emptyList()) }
                 }
-            }
+                .collect { topics ->
+                    _state.update {
+                        it.copy(
+                            topics = topics.sortedWith(
+                                compareByDescending<RevisionTopicWithProgress> { topic -> topic.requiresAttention }
+                                    .thenByDescending { topic -> topic.inProgressDay != null }
+                                    .thenByDescending { topic -> topic.activeDay != null }
+                                    .thenBy { topic -> topic.actionableDay ?: Int.MAX_VALUE }
+                            )
+                        )
+                    }
+                }
         }
     }
 
@@ -171,3 +178,5 @@ class RevisionsViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+private const val TAG = "RevisionsViewModel"

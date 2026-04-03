@@ -7,9 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.vishruthdev.destiny.data.HabitWithStats
-import com.vishruthdev.destiny.data.RevisionDayState
 import com.vishruthdev.destiny.data.RevisionTopicWithProgress
-import java.util.Calendar
 
 class ReminderScheduler(context: Context) {
 
@@ -65,7 +63,14 @@ class ReminderScheduler(context: Context) {
         }
 
         // 10 min notification
-        if (habit.startDateMillis <= dayStartMillis(notifyDueAt)) {
+        if (
+            habit.startDateMillis <= dayStartMillis(notifyDueAt) &&
+            shouldScheduleHabitReminderForDueDay(
+                todayState = habit.todayState,
+                dueAtMillis = notifyDueAt,
+                nowMillis = nowMillis
+            )
+        ) {
             val code = habitNotifyRequestCode(habit.id)
             setAlarm(
                 requestCode = code,
@@ -79,7 +84,14 @@ class ReminderScheduler(context: Context) {
         }
 
         // 2 min device alarm
-        if (habit.startDateMillis <= dayStartMillis(alarmDueAt)) {
+        if (
+            habit.startDateMillis <= dayStartMillis(alarmDueAt) &&
+            shouldScheduleHabitReminderForDueDay(
+                todayState = habit.todayState,
+                dueAtMillis = alarmDueAt,
+                nowMillis = nowMillis
+            )
+        ) {
             val code = habitAlarmRequestCode(habit.id)
             setAlarm(
                 requestCode = code,
@@ -99,7 +111,7 @@ class ReminderScheduler(context: Context) {
         codes: MutableSet<Int>
     ) {
         if (!revision.alarmEnabled) return
-        val nextDay = findNextSchedulableDay(revision) ?: return
+        val nextDay = findNextSchedulableRevisionDay(revision.dayStates) ?: return
 
         val dayOffsetMillis = (nextDay - 1).coerceAtLeast(0) * ONE_DAY_MS
         val timeOffset = timeOffsetMillis(revision.revisionHour, revision.revisionMinute)
@@ -134,23 +146,6 @@ class ReminderScheduler(context: Context) {
             )
             codes.add(code)
         }
-    }
-
-    private fun findNextSchedulableDay(revision: RevisionTopicWithProgress): Int? {
-        for (dayProgress in revision.dayStates) {
-            when (dayProgress.state) {
-                RevisionDayState.Completed -> continue
-                RevisionDayState.Active -> return dayProgress.day
-                RevisionDayState.InProgress -> return dayProgress.day
-                RevisionDayState.Locked -> {
-                    val allPreviousCompleted = revision.dayStates
-                        .filter { it.day < dayProgress.day }
-                        .all { it.state == RevisionDayState.Completed }
-                    return if (allPreviousCompleted) dayProgress.day else null
-                }
-            }
-        }
-        return null
     }
 
     private fun setAlarm(
@@ -226,16 +221,6 @@ class ReminderScheduler(context: Context) {
         prefs.edit()
             .putStringSet(KEY_ACTIVE_CODES, codes.map { it.toString() }.toSet())
             .apply()
-    }
-
-    private fun dayStartMillis(timeMillis: Long): Long {
-        val cal = Calendar.getInstance()
-        cal.timeInMillis = timeMillis
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
     }
 
     private fun timeOffsetMillis(hour: Int, minute: Int): Long {

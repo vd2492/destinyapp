@@ -1,5 +1,6 @@
 package com.vishruthdev.destiny.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import com.vishruthdev.destiny.data.HabitRepository
 import com.vishruthdev.destiny.data.RevisionTopicWithProgress
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +57,22 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            repository.getTodayHabitsWithCompletion().collect { withCompletion ->
+            repository.getTodayHabitsWithCompletion()
+                .catch { throwable ->
+                    Log.w(TAG, "Failed to load today's habits", throwable)
+                    countdownJob?.cancel()
+                    celebrationJob?.cancel()
+                    _state.update {
+                        it.copy(
+                            habits = emptyList(),
+                            dueHabitsCount = 0,
+                            progressPercent = 0,
+                            showAllCompletedState = false,
+                            undoCountdownSeconds = -1
+                        )
+                    }
+                }
+                .collect { withCompletion ->
                 val habits = withCompletion.map { h ->
                     HabitUiState(
                         id = h.id,
@@ -103,7 +120,18 @@ class HomeViewModel(
         }
 
         viewModelScope.launch {
-            repository.getRevisionTopicsWithProgress().collect { topics ->
+            repository.getRevisionTopicsWithProgress()
+                .catch { throwable ->
+                    Log.w(TAG, "Failed to load revision topics", throwable)
+                    _state.update {
+                        it.copy(
+                            dueRevisionsCount = 0,
+                            dueRevisions = emptyList(),
+                            hasRevisionTopics = false
+                        )
+                    }
+                }
+                .collect { topics ->
                 val dueRevisions = topics
                     .filter { it.requiresAttention }
                     .sortedWith(
@@ -180,3 +208,5 @@ class HomeViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+private const val TAG = "HomeViewModel"

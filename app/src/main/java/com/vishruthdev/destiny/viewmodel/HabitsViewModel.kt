@@ -1,10 +1,12 @@
 package com.vishruthdev.destiny.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vishruthdev.destiny.data.HabitRepository
 import com.vishruthdev.destiny.data.HabitWithStats
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,9 +41,14 @@ class HabitsViewModel(
 
     init {
         viewModelScope.launch {
-            repository.getHabitsWithStats().collect { habits ->
-                _state.update { it.copy(habits = habits) }
-            }
+            repository.getHabitsWithStats()
+                .catch { throwable ->
+                    Log.w(TAG, "Failed to load habits", throwable)
+                    _state.update { it.copy(habits = emptyList()) }
+                }
+                .collect { habits ->
+                    _state.update { it.copy(habits = habits) }
+                }
         }
     }
 
@@ -151,3 +158,5 @@ class HabitsViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+private const val TAG = "HabitsViewModel"

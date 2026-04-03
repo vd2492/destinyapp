@@ -1,6 +1,7 @@
 package com.vishruthdev.destiny.reminder
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -81,7 +82,7 @@ object ReminderNotificationManager {
             .setContentIntent(contentIntent)
             .build()
 
-        NotificationManagerCompat.from(context).notify(notificationId, notification)
+        notify(context, notificationId, notification)
     }
 
     fun showAlarmNotification(
@@ -113,7 +114,7 @@ object ReminderNotificationManager {
             .setContentIntent(contentIntent)
             .build()
 
-        NotificationManagerCompat.from(context).notify(notificationId, notification)
+        notify(context, notificationId, notification)
     }
 
     fun showHabitNotification(
@@ -161,6 +162,15 @@ object ReminderNotificationManager {
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun notify(
+        context: Context,
+        notificationId: Int,
+        notification: android.app.Notification
+    ) {
+        NotificationManagerCompat.from(context).notify(notificationId, notification)
     }
 
     private fun launchAppPendingIntent(context: Context, requestCode: Int): PendingIntent {

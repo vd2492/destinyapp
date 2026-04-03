@@ -57,20 +57,28 @@ class HabitRepository(
                 )
 
                 if (history.missedDaysCount > 0) {
-                    habitsCollection?.document(habit.id)?.update(
-                        mapOf(
-                            "startDateMillis" to todayStart,
-                            "completionDates" to emptyList<Long>(),
-                            "inProgressDates" to emptyList<Long>()
-                        )
-                    )?.awaitResult()
+                    val resetSucceeded = runCatching {
+                        habitsCollection?.document(habit.id)?.update(
+                            mapOf(
+                                "startDateMillis" to todayStart,
+                                "completionDates" to emptyList<Long>(),
+                                "inProgressDates" to emptyList<Long>()
+                            )
+                        )?.awaitResult()
+                    }.onFailure { throwable ->
+                        Log.w(TAG, "Failed to auto-reset habit ${habit.id}", throwable)
+                    }.isSuccess
 
-                    // Return reset data immediately so UI doesn't flicker
-                    habit.copy(
-                        startDateMillis = todayStart,
-                        completionDates = emptyList(),
-                        inProgressDates = emptyList()
-                    )
+                    if (resetSucceeded) {
+                        // Return reset data immediately so UI doesn't flicker.
+                        habit.copy(
+                            startDateMillis = todayStart,
+                            completionDates = emptyList(),
+                            inProgressDates = emptyList()
+                        )
+                    } else {
+                        habit
+                    }
                 } else {
                     habit
                 }
@@ -112,8 +120,15 @@ class HabitRepository(
     fun getHabitsWithStats(): Flow<List<HabitWithStats>> {
         return habitsFlowWithAutoReset().map { habits ->
             val now = Calendar.getInstance().timeInMillis
+            val todayStart = todayStartMillis(now)
             habits.map { habit ->
                 val completionDates = habit.completionDates.toSet()
+                val inProgressDates = habit.inProgressDates.toSet()
+                val todayState = when {
+                    todayStart in completionDates -> HabitCompletionState.Completed
+                    todayStart in inProgressDates -> HabitCompletionState.InProgress
+                    else -> HabitCompletionState.NotStarted
+                }
                 val streak = computeHabitStreak(
                     completionDates = completionDates,
                     startDateMillis = habit.startDateMillis,
@@ -139,6 +154,7 @@ class HabitRepository(
                     startMinute = habit.startMinute,
                     missedDaysCount = 0,
                     latestMissedDateMillis = null,
+                    todayState = todayState,
                     alarmEnabled = habit.alarmEnabled
                 )
             }
@@ -189,10 +205,12 @@ class HabitRepository(
         startMinute: Int
     ): String {
         val habitsCollection = currentUserHabitsCollection() ?: return ""
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return ""
         val id = UUID.randomUUID().toString()
         val entity = HabitDocument(
             id = id,
-            name = name,
+            name = trimmedName,
             createdAtMillis = Calendar.getInstance().timeInMillis,
             startDateMillis = startDateMillis,
             startHour = startHour.coerceIn(0, 23),
@@ -380,10 +398,12 @@ class HabitRepository(
         revisionMinute: Int
     ): String {
         val revisionsCollection = currentUserRevisionsCollection() ?: return ""
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return ""
         val id = UUID.randomUUID().toString()
         val entity = RevisionTopicDocument(
             id = id,
-            name = name,
+            name = trimmedName,
             createdAtMillis = Calendar.getInstance().timeInMillis,
             startDateMillis = startDateMillis,
             revisionHour = revisionHour.coerceIn(0, 23),
@@ -490,13 +510,21 @@ class HabitRepository(
         ) ?: return topic
 
         val todayStart = todayStartMillis(nowMillis)
-        revisionsCollection?.document(topic.id)?.update(
-            mapOf(
-                "startDateMillis" to todayStart,
-                "completedDays" to emptyList<Long>(),
-                "inProgressDays" to emptyList<Long>()
-            )
-        )?.awaitResult()
+        val resetSucceeded = runCatching {
+            revisionsCollection?.document(topic.id)?.update(
+                mapOf(
+                    "startDateMillis" to todayStart,
+                    "completedDays" to emptyList<Long>(),
+                    "inProgressDays" to emptyList<Long>()
+                )
+            )?.awaitResult()
+        }.onFailure { throwable ->
+            Log.w(TAG, "Failed to auto-reset revision ${topic.id}", throwable)
+        }.isSuccess
+
+        if (!resetSucceeded) {
+            return topic
+        }
 
         Log.d(TAG, "Revision ${topic.id} missed day $missedDay; restarting from today")
         return topic.copy(
@@ -717,6 +745,7 @@ data class HabitWithStats(
     val startMinute: Int,
     val missedDaysCount: Int = 0,
     val latestMissedDateMillis: Long? = null,
+    val todayState: HabitCompletionState = HabitCompletionState.NotStarted,
     val alarmEnabled: Boolean = true
 )
 
