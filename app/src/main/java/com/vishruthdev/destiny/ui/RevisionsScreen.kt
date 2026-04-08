@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -143,7 +144,8 @@ fun RevisionsScreen(
                         onLongPress = { viewModel.toggleDeleteMode() },
                         onStartRevision = { viewModel.startRevision(topic.id) },
                         onMarkComplete = { viewModel.completeRevision(topic.id) },
-                        onAlarmToggle = { enabled -> viewModel.toggleRevisionAlarm(topic.id, enabled) }
+                        onAlarmToggle = { enabled -> viewModel.toggleRevisionAlarm(topic.id, enabled) },
+                        onShowCompletionDialog = { viewModel.showCompletionDialog(topic.id) }
                     )
                 }
             }
@@ -327,6 +329,15 @@ fun RevisionsScreen(
             containerColor = MaterialTheme.colorScheme.surface
         )
     }
+
+    state.completionDialog?.let { dialogState ->
+        RevisionCompletionOptionsDialog(
+            dialogState = dialogState,
+            onDismiss = viewModel::dismissCompletionDialog,
+            onRestart = viewModel::restartCompletedTopic,
+            onDelete = viewModel::deleteCompletedTopic
+        )
+    }
 }
 
 @Composable
@@ -385,7 +396,8 @@ private fun FlippableRevisionCard(
     onLongPress: () -> Unit,
     onStartRevision: () -> Unit,
     onMarkComplete: () -> Unit,
-    onAlarmToggle: (Boolean) -> Unit
+    onAlarmToggle: (Boolean) -> Unit,
+    onShowCompletionDialog: () -> Unit
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (isFlipped) 180f else 0f,
@@ -420,6 +432,8 @@ private fun FlippableRevisionCard(
                 name = topic.name,
                 alarmEnabled = topic.alarmEnabled,
                 onAlarmToggle = onAlarmToggle,
+                showEditOption = topic.isCompleted,
+                onShowCompletionDialog = onShowCompletionDialog,
                 modifier = Modifier.graphicsLayer { rotationY = 180f }
             )
         }
@@ -580,6 +594,8 @@ private fun RevisionCardBack(
     name: String,
     alarmEnabled: Boolean,
     onAlarmToggle: (Boolean) -> Unit,
+    showEditOption: Boolean,
+    onShowCompletionDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -624,6 +640,16 @@ private fun RevisionCardBack(
                         checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f)
                     )
                 )
+            }
+            if (showEditOption) {
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = onShowCompletionDialog,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Edit options")
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -754,4 +780,64 @@ private fun formatTime(hour: Int, minute: Int): String {
     }
     val formatter = SimpleDateFormat("hh:mm a", Locale.getDefault())
     return formatter.format(calendar.time)
+}
+
+@Composable
+private fun RevisionCompletionOptionsDialog(
+    dialogState: com.vishruthdev.destiny.viewmodel.RevisionCompletionDialogState,
+    onDismiss: () -> Unit,
+    onRestart: () -> Unit,
+    onDelete: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Revision completed",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss dialog"
+                    )
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "${dialogState.topicName} has finished the 1-2-4-7 cycle. You can restart the topic or delete it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onRestart,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, DestinyAccentBlue)
+                ) {
+                    Text(
+                        text = "Restart topic",
+                        color = DestinyAccentBlue
+                    )
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Delete topic")
+                }
+            }
+        },
+        confirmButton = {},
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }

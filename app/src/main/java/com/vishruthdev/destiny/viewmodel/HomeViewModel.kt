@@ -23,7 +23,19 @@ data class HabitUiState(
     val startHour: Int,
     val startMinute: Int,
     val missedDaysCount: Int,
-    val latestMissedDateMillis: Long?
+    val latestMissedDateMillis: Long?,
+    val hasThirtyDayMilestone: Boolean,
+    val thirtyDayDialogDismissed: Boolean
+)
+
+data class HomeHabitMilestoneDialogState(
+    val habitId: String,
+    val habitName: String
+)
+
+data class HomeRevisionCompletionDialogState(
+    val topicId: String,
+    val topicName: String
 )
 
 data class HomeUiState(
@@ -34,7 +46,9 @@ data class HomeUiState(
     val dueRevisions: List<RevisionTopicWithProgress> = emptyList(),
     val hasRevisionTopics: Boolean = false,
     val showAllCompletedState: Boolean = false,
-    val undoCountdownSeconds: Int = -1
+    val undoCountdownSeconds: Int = -1,
+    val habitMilestoneDialog: HomeHabitMilestoneDialogState? = null,
+    val revisionCompletionDialog: HomeRevisionCompletionDialogState? = null
 )
 
 class HomeViewModel(
@@ -54,6 +68,8 @@ class HomeViewModel(
     private var celebrationJob: Job? = null
     private var countdownJob: Job? = null
     private var isFirstEmission = true
+    private val handledHabitMilestoneDialogIds = mutableSetOf<String>()
+    private val handledRevisionCompletionDialogIds = mutableSetOf<String>()
 
     init {
         viewModelScope.launch {
@@ -68,11 +84,15 @@ class HomeViewModel(
                             dueHabitsCount = 0,
                             progressPercent = 0,
                             showAllCompletedState = false,
-                            undoCountdownSeconds = -1
+                            undoCountdownSeconds = -1,
+                            habitMilestoneDialog = null
                         )
                     }
                 }
                 .collect { withCompletion ->
+                handledHabitMilestoneDialogIds.retainAll(
+                    withCompletion.filter { it.hasThirtyDayMilestone }.map { it.id }.toSet()
+                )
                 val habits = withCompletion.map { h ->
                     HabitUiState(
                         id = h.id,
@@ -81,7 +101,9 @@ class HomeViewModel(
                         startHour = h.startHour,
                         startMinute = h.startMinute,
                         missedDaysCount = h.missedDaysCount,
-                        latestMissedDateMillis = h.latestMissedDateMillis
+                        latestMissedDateMillis = h.latestMissedDateMillis,
+                        hasThirtyDayMilestone = h.hasThirtyDayMilestone,
+                        thirtyDayDialogDismissed = h.thirtyDayDialogDismissed
                     )
                 }
                 val total = habits.size
@@ -89,6 +111,22 @@ class HomeViewModel(
                 val dueHabitsCount = habits.count { it.state != HabitCompletionState.Completed }
                 val progressPercent = if (total == 0) 0 else (completedHabitsCount.toFloat() / total * 100).toInt()
                 val allCompleted = total > 0 && progressPercent == 100
+                val currentDialog = _state.value.habitMilestoneDialog
+                    ?.takeIf { dialog -> habits.any { it.id == dialog.habitId && it.hasThirtyDayMilestone } }
+                val nextAutoDialog = if (currentDialog == null) {
+                    habits.firstOrNull { habit ->
+                        habit.hasThirtyDayMilestone &&
+                            !habit.thirtyDayDialogDismissed &&
+                            habit.id !in handledHabitMilestoneDialogIds
+                    }?.let { habit ->
+                        HomeHabitMilestoneDialogState(
+                            habitId = habit.id,
+                            habitName = habit.label
+                        )
+                    }
+                } else {
+                    null
+                }
 
                 celebrationJob?.cancel()
                 if (allCompleted) {
@@ -113,7 +151,8 @@ class HomeViewModel(
                     it.copy(
                         habits = habits,
                         dueHabitsCount = dueHabitsCount,
-                        progressPercent = progressPercent
+                        progressPercent = progressPercent,
+                        habitMilestoneDialog = currentDialog ?: nextAutoDialog
                     )
                 }
             }
@@ -127,11 +166,15 @@ class HomeViewModel(
                         it.copy(
                             dueRevisionsCount = 0,
                             dueRevisions = emptyList(),
-                            hasRevisionTopics = false
+                            hasRevisionTopics = false,
+                            revisionCompletionDialog = null
                         )
                     }
                 }
                 .collect { topics ->
+                handledRevisionCompletionDialogIds.retainAll(
+                    topics.filter { it.isCompleted }.map { it.id }.toSet()
+                )
                 val dueRevisions = topics
                     .filter { it.requiresAttention }
                     .sortedWith(
@@ -139,11 +182,28 @@ class HomeViewModel(
                             .thenByDescending { it.activeDay != null }
                             .thenBy { it.actionableDay ?: Int.MAX_VALUE }
                     )
+                val currentDialog = _state.value.revisionCompletionDialog
+                    ?.takeIf { dialog -> topics.any { it.id == dialog.topicId && it.isCompleted } }
+                val nextAutoDialog = if (currentDialog == null) {
+                    topics.firstOrNull { topic ->
+                        topic.isCompleted &&
+                            !topic.completionDialogDismissed &&
+                            topic.id !in handledRevisionCompletionDialogIds
+                    }?.let { topic ->
+                        HomeRevisionCompletionDialogState(
+                            topicId = topic.id,
+                            topicName = topic.name
+                        )
+                    }
+                } else {
+                    null
+                }
                 _state.update {
                     it.copy(
                         dueRevisionsCount = dueRevisions.size,
                         dueRevisions = dueRevisions,
-                        hasRevisionTopics = topics.isNotEmpty()
+                        hasRevisionTopics = topics.isNotEmpty(),
+                        revisionCompletionDialog = currentDialog ?: nextAutoDialog
                     )
                 }
             }
@@ -193,6 +253,64 @@ class HomeViewModel(
     fun completeRevision(topicId: String) {
         viewModelScope.launch {
             repository.completeActiveRevision(topicId)
+        }
+    }
+
+    fun dismissHabitMilestoneDialog() {
+        val habitId = _state.value.habitMilestoneDialog?.habitId ?: return
+        handledHabitMilestoneDialogIds.add(habitId)
+        _state.update { it.copy(habitMilestoneDialog = null) }
+        viewModelScope.launch {
+            repository.acknowledgeHabitThirtyDayDialog(habitId)
+        }
+    }
+
+    fun continueHabitStreak() {
+        dismissHabitMilestoneDialog()
+    }
+
+    fun restartHabitFromDialog() {
+        val habitId = _state.value.habitMilestoneDialog?.habitId ?: return
+        handledHabitMilestoneDialogIds.add(habitId)
+        _state.update { it.copy(habitMilestoneDialog = null) }
+        viewModelScope.launch {
+            repository.restartHabit(habitId)
+        }
+    }
+
+    fun deleteHabitFromDialog() {
+        val habitId = _state.value.habitMilestoneDialog?.habitId ?: return
+        handledHabitMilestoneDialogIds.add(habitId)
+        _state.update { it.copy(habitMilestoneDialog = null) }
+        viewModelScope.launch {
+            repository.deleteHabit(habitId)
+        }
+    }
+
+    fun dismissRevisionCompletionDialog() {
+        val topicId = _state.value.revisionCompletionDialog?.topicId ?: return
+        handledRevisionCompletionDialogIds.add(topicId)
+        _state.update { it.copy(revisionCompletionDialog = null) }
+        viewModelScope.launch {
+            repository.acknowledgeRevisionCompletionDialog(topicId)
+        }
+    }
+
+    fun restartRevisionFromDialog() {
+        val topicId = _state.value.revisionCompletionDialog?.topicId ?: return
+        handledRevisionCompletionDialogIds.add(topicId)
+        _state.update { it.copy(revisionCompletionDialog = null) }
+        viewModelScope.launch {
+            repository.restartRevisionTopic(topicId)
+        }
+    }
+
+    fun deleteRevisionFromDialog() {
+        val topicId = _state.value.revisionCompletionDialog?.topicId ?: return
+        handledRevisionCompletionDialogIds.add(topicId)
+        _state.update { it.copy(revisionCompletionDialog = null) }
+        viewModelScope.launch {
+            repository.deleteRevisionTopic(topicId)
         }
     }
 }

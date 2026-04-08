@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vishruthdev.destiny.BuildConfig
 import com.vishruthdev.destiny.data.AuthRepository
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import androidx.compose.runtime.collectAsState
@@ -108,5 +109,14 @@ fun SettingsScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Text(
+            text = "Version ${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.Start)
+        )
     }
 }

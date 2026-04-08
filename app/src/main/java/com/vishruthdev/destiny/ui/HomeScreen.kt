@@ -23,8 +23,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -52,6 +55,8 @@ import com.vishruthdev.destiny.ui.theme.DestinyInProgressOrange
 import com.vishruthdev.destiny.ui.theme.DestinyLockedGrey
 import com.vishruthdev.destiny.ui.theme.DestinyMissedRed
 import com.vishruthdev.destiny.viewmodel.HabitUiState
+import com.vishruthdev.destiny.viewmodel.HomeHabitMilestoneDialogState
+import com.vishruthdev.destiny.viewmodel.HomeRevisionCompletionDialogState
 import com.vishruthdev.destiny.viewmodel.HomeViewModel
 
 @Composable
@@ -122,6 +127,26 @@ fun HomeScreen(
             onCompleteRevision = viewModel::completeRevision
         )
         Spacer(modifier = Modifier.height(24.dp))
+    }
+
+    when {
+        state.habitMilestoneDialog != null -> {
+            HabitMilestoneOptionsDialog(
+                dialogState = state.habitMilestoneDialog,
+                onDismiss = viewModel::dismissHabitMilestoneDialog,
+                onRestart = viewModel::restartHabitFromDialog,
+                onDelete = viewModel::deleteHabitFromDialog,
+                onContinue = viewModel::continueHabitStreak
+            )
+        }
+        state.revisionCompletionDialog != null -> {
+            RevisionCompletionOptionsDialog(
+                dialogState = state.revisionCompletionDialog,
+                onDismiss = viewModel::dismissRevisionCompletionDialog,
+                onRestart = viewModel::restartRevisionFromDialog,
+                onDelete = viewModel::deleteRevisionFromDialog
+            )
+        }
     }
 }
 
@@ -775,6 +800,138 @@ private fun RevisionDayNode(
             }
         )
     }
+}
+
+@Composable
+private fun HabitMilestoneOptionsDialog(
+    dialogState: HomeHabitMilestoneDialogState?,
+    onDismiss: () -> Unit,
+    onRestart: () -> Unit,
+    onDelete: () -> Unit,
+    onContinue: () -> Unit
+) {
+    if (dialogState == null) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "30-day streak complete",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss dialog"
+                    )
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "${dialogState.habitName} has reached 30 completed days. You can restart the habit, delete it, or keep the streak going.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onRestart,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Restart habit")
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Delete habit")
+                }
+                OutlinedButton(
+                    onClick = onContinue,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, DestinyAccentBlue)
+                ) {
+                    Text(
+                        text = "Continue streak",
+                        color = DestinyAccentBlue
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+@Composable
+private fun RevisionCompletionOptionsDialog(
+    dialogState: HomeRevisionCompletionDialogState?,
+    onDismiss: () -> Unit,
+    onRestart: () -> Unit,
+    onDelete: () -> Unit
+) {
+    if (dialogState == null) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Revision completed",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss dialog"
+                    )
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "${dialogState.topicName} has finished the 1-2-4-7 cycle. You can restart the topic or delete it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onRestart,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, DestinyAccentBlue)
+                ) {
+                    Text(
+                        text = "Restart topic",
+                        color = DestinyAccentBlue
+                    )
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Delete topic")
+                }
+            }
+        },
+        confirmButton = {},
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }
 
 private fun formatMissedHabitLabel(

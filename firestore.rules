@@ -46,7 +46,8 @@ service cloud.firestore {
         'startMinute',
         'completionDates',
         'inProgressDates',
-        'alarmEnabled'
+        'alarmEnabled',
+        'thirtyDayDialogDismissed'
       ]) &&
       request.resource.data.id == habitId &&
       request.resource.data.name is string &&
@@ -69,6 +70,10 @@ service cloud.firestore {
         !request.resource.data.keys().hasAny(['alarmEnabled']) ||
         request.resource.data.alarmEnabled is bool
       ) &&
+      (
+        !request.resource.data.keys().hasAny(['thirtyDayDialogDismissed']) ||
+        request.resource.data.thirtyDayDialogDismissed is bool
+      ) &&
       keepsCreatedAt();
     }
 
@@ -82,7 +87,8 @@ service cloud.firestore {
         'revisionMinute',
         'completedDays',
         'inProgressDays',
-        'alarmEnabled'
+        'alarmEnabled',
+        'completionDialogDismissed'
       ]) &&
       request.resource.data.id == topicId &&
       request.resource.data.name is string &&
@@ -104,6 +110,10 @@ service cloud.firestore {
       (
         !request.resource.data.keys().hasAny(['alarmEnabled']) ||
         request.resource.data.alarmEnabled is bool
+      ) &&
+      (
+        !request.resource.data.keys().hasAny(['completionDialogDismissed']) ||
+        request.resource.data.completionDialogDismissed is bool
       ) &&
       keepsCreatedAt();
     }

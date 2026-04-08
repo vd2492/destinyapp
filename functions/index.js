@@ -124,6 +124,7 @@ async function normalizeRevisionTopic(documentRef, topic, nowMillis) {
     startDateMillis: restartStartDateMillis,
     completedDays: [],
     inProgressDays: [],
+    completionDialogDismissed: false,
   }, { merge: true });
 
   logger.debug("Restarted revision topic after missed day", {
@@ -137,6 +138,7 @@ async function normalizeRevisionTopic(documentRef, topic, nowMillis) {
     startDateMillis: restartStartDateMillis,
     completedDays: [],
     inProgressDays: [],
+    completionDialogDismissed: false,
   };
 }
 

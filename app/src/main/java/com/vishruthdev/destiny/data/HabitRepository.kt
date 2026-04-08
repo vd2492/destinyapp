@@ -62,7 +62,8 @@ class HabitRepository(
                             mapOf(
                                 "startDateMillis" to todayStart,
                                 "completionDates" to emptyList<Long>(),
-                                "inProgressDates" to emptyList<Long>()
+                                "inProgressDates" to emptyList<Long>(),
+                                "thirtyDayDialogDismissed" to false
                             )
                         )?.awaitResult()
                     }.onFailure { throwable ->
@@ -74,7 +75,8 @@ class HabitRepository(
                         habit.copy(
                             startDateMillis = todayStart,
                             completionDates = emptyList(),
-                            inProgressDates = emptyList()
+                            inProgressDates = emptyList(),
+                            thirtyDayDialogDismissed = false
                         )
                     } else {
                         habit
@@ -101,6 +103,15 @@ class HabitRepository(
                         todayStart in inProgressDates -> HabitCompletionState.InProgress
                         else -> HabitCompletionState.NotStarted
                     }
+                    val streak = computeDisplayedHabitStreak(
+                        completionDates = completionDates,
+                        startDateMillis = habit.startDateMillis,
+                        startHour = habit.startHour,
+                        startMinute = habit.startMinute,
+                        todayState = todayState,
+                        todayStart = todayStart,
+                        nowMillis = now
+                    )
 
                     HabitWithCompletion(
                         id = habit.id,
@@ -110,7 +121,9 @@ class HabitRepository(
                         startMinute = habit.startMinute,
                         missedDaysCount = 0,
                         latestMissedDateMillis = null,
-                        alarmEnabled = habit.alarmEnabled
+                        alarmEnabled = habit.alarmEnabled,
+                        hasThirtyDayMilestone = streak >= 30,
+                        thirtyDayDialogDismissed = habit.thirtyDayDialogDismissed
                     )
                 }
         }
@@ -129,15 +142,14 @@ class HabitRepository(
                     todayStart in inProgressDates -> HabitCompletionState.InProgress
                     else -> HabitCompletionState.NotStarted
                 }
-                val streak = computeHabitStreak(
+                val streak = computeDisplayedHabitStreak(
                     completionDates = completionDates,
                     startDateMillis = habit.startDateMillis,
-                    latestExpectedDateMillis = latestExpectedHabitDate(
-                        startDateMillis = habit.startDateMillis,
-                        startHour = habit.startHour,
-                        startMinute = habit.startMinute,
-                        nowMillis = now
-                    )
+                    startHour = habit.startHour,
+                    startMinute = habit.startMinute,
+                    todayState = todayState,
+                    todayStart = todayStart,
+                    nowMillis = now
                 )
                 val trackedCompletions = completionDates.count { date ->
                     date >= habit.startDateMillis && date < habit.startDateMillis + thirtyDaysMillis
@@ -155,10 +167,38 @@ class HabitRepository(
                     missedDaysCount = 0,
                     latestMissedDateMillis = null,
                     todayState = todayState,
-                    alarmEnabled = habit.alarmEnabled
+                    alarmEnabled = habit.alarmEnabled,
+                    hasThirtyDayMilestone = streak >= 30,
+                    thirtyDayDialogDismissed = habit.thirtyDayDialogDismissed
                 )
             }
         }
+    }
+
+    private fun computeDisplayedHabitStreak(
+        completionDates: Set<Long>,
+        startDateMillis: Long,
+        startHour: Int,
+        startMinute: Int,
+        todayState: HabitCompletionState,
+        todayStart: Long,
+        nowMillis: Long
+    ): Int {
+        val latestExpectedDateMillis = when (todayState) {
+            HabitCompletionState.Completed -> todayStart
+            HabitCompletionState.NotStarted,
+            HabitCompletionState.InProgress -> latestExpectedHabitDate(
+                startDateMillis = startDateMillis,
+                startHour = startHour,
+                startMinute = startMinute,
+                nowMillis = nowMillis
+            )
+        }
+        return computeHabitStreak(
+            completionDates = completionDates,
+            startDateMillis = startDateMillis,
+            latestExpectedDateMillis = latestExpectedDateMillis
+        )
     }
 
     private fun computeHabitStreak(
@@ -228,10 +268,54 @@ class HabitRepository(
             ?.awaitResult()
     }
 
+    suspend fun acknowledgeHabitThirtyDayDialog(habitId: String) {
+        currentUserHabitsCollection()
+            ?.document(habitId)
+            ?.update("thirtyDayDialogDismissed", true)
+            ?.awaitResult()
+    }
+
+    suspend fun restartHabit(habitId: String) {
+        val todayStart = todayStartMillis()
+        currentUserHabitsCollection()
+            ?.document(habitId)
+            ?.update(
+                mapOf(
+                    "startDateMillis" to todayStart,
+                    "completionDates" to emptyList<Long>(),
+                    "inProgressDates" to emptyList<Long>(),
+                    "thirtyDayDialogDismissed" to false
+                )
+            )
+            ?.awaitResult()
+    }
+
     suspend fun toggleRevisionAlarm(topicId: String, enabled: Boolean) {
         currentUserRevisionsCollection()
             ?.document(topicId)
             ?.update("alarmEnabled", enabled)
+            ?.awaitResult()
+    }
+
+    suspend fun acknowledgeRevisionCompletionDialog(topicId: String) {
+        currentUserRevisionsCollection()
+            ?.document(topicId)
+            ?.update("completionDialogDismissed", true)
+            ?.awaitResult()
+    }
+
+    suspend fun restartRevisionTopic(topicId: String) {
+        val todayStart = todayStartMillis()
+        currentUserRevisionsCollection()
+            ?.document(topicId)
+            ?.update(
+                mapOf(
+                    "startDateMillis" to todayStart,
+                    "completedDays" to emptyList<Long>(),
+                    "inProgressDays" to emptyList<Long>(),
+                    "completionDialogDismissed" to false
+                )
+            )
             ?.awaitResult()
     }
 
@@ -278,7 +362,8 @@ class HabitRepository(
                     startDateMillis = topic.startDateMillis,
                     revisionHour = topic.revisionHour,
                     revisionMinute = topic.revisionMinute,
-                    alarmEnabled = topic.alarmEnabled
+                    alarmEnabled = topic.alarmEnabled,
+                    completionDialogDismissed = topic.completionDialogDismissed
                 )
             }
         }
@@ -515,7 +600,8 @@ class HabitRepository(
                 mapOf(
                     "startDateMillis" to todayStart,
                     "completedDays" to emptyList<Long>(),
-                    "inProgressDays" to emptyList<Long>()
+                    "inProgressDays" to emptyList<Long>(),
+                    "completionDialogDismissed" to false
                 )
             )?.awaitResult()
         }.onFailure { throwable ->
@@ -530,7 +616,8 @@ class HabitRepository(
         return topic.copy(
             startDateMillis = todayStart,
             completedDays = emptyList(),
-            inProgressDays = emptyList()
+            inProgressDays = emptyList(),
+            completionDialogDismissed = false
         )
     }
 
@@ -695,7 +782,8 @@ class HabitRepository(
         val startMinute: Int = 0,
         val completionDates: List<Long> = emptyList(),
         val inProgressDates: List<Long> = emptyList(),
-        val alarmEnabled: Boolean = true
+        val alarmEnabled: Boolean = true,
+        val thirtyDayDialogDismissed: Boolean = false
     )
 
     private data class RevisionTopicDocument(
@@ -707,7 +795,8 @@ class HabitRepository(
         val revisionMinute: Int = 0,
         val completedDays: List<Long> = emptyList(),
         val inProgressDays: List<Long> = emptyList(),
-        val alarmEnabled: Boolean = true
+        val alarmEnabled: Boolean = true,
+        val completionDialogDismissed: Boolean = false
     )
 
     private companion object {
@@ -732,7 +821,9 @@ data class HabitWithCompletion(
     val startMinute: Int,
     val missedDaysCount: Int = 0,
     val latestMissedDateMillis: Long? = null,
-    val alarmEnabled: Boolean = true
+    val alarmEnabled: Boolean = true,
+    val hasThirtyDayMilestone: Boolean = false,
+    val thirtyDayDialogDismissed: Boolean = false
 )
 
 data class HabitWithStats(
@@ -746,7 +837,9 @@ data class HabitWithStats(
     val missedDaysCount: Int = 0,
     val latestMissedDateMillis: Long? = null,
     val todayState: HabitCompletionState = HabitCompletionState.NotStarted,
-    val alarmEnabled: Boolean = true
+    val alarmEnabled: Boolean = true,
+    val hasThirtyDayMilestone: Boolean = false,
+    val thirtyDayDialogDismissed: Boolean = false
 )
 
 enum class RevisionDayState {
@@ -768,7 +861,8 @@ data class RevisionTopicWithProgress(
     val startDateMillis: Long,
     val revisionHour: Int,
     val revisionMinute: Int,
-    val alarmEnabled: Boolean = true
+    val alarmEnabled: Boolean = true,
+    val completionDialogDismissed: Boolean = false
 ) {
     val activeDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.Active }?.day

@@ -29,7 +29,13 @@ data class HabitsUiState(
     val startHour: Int = 9,
     val startMinute: Int = 0,
     val deleteMode: Boolean = false,
-    val flippedHabitId: String? = null
+    val flippedHabitId: String? = null,
+    val milestoneDialog: HabitMilestoneDialogState? = null
+)
+
+data class HabitMilestoneDialogState(
+    val habitId: String,
+    val habitName: String
 )
 
 class HabitsViewModel(
@@ -38,16 +44,41 @@ class HabitsViewModel(
 
     private val _state = MutableStateFlow(HabitsUiState(habits = emptyList()))
     val state: StateFlow<HabitsUiState> = _state.asStateFlow()
+    private val handledMilestoneDialogHabitIds = mutableSetOf<String>()
 
     init {
         viewModelScope.launch {
             repository.getHabitsWithStats()
                 .catch { throwable ->
                     Log.w(TAG, "Failed to load habits", throwable)
-                    _state.update { it.copy(habits = emptyList()) }
+                    _state.update { it.copy(habits = emptyList(), milestoneDialog = null) }
                 }
                 .collect { habits ->
-                    _state.update { it.copy(habits = habits) }
+                    handledMilestoneDialogHabitIds.retainAll(
+                        habits.filter { it.hasThirtyDayMilestone }.map { it.id }.toSet()
+                    )
+                    val currentDialog = _state.value.milestoneDialog
+                        ?.takeIf { dialog -> habits.any { it.id == dialog.habitId && it.hasThirtyDayMilestone } }
+                    val nextAutoDialog = if (currentDialog == null) {
+                        habits.firstOrNull { habit ->
+                            habit.hasThirtyDayMilestone &&
+                                !habit.thirtyDayDialogDismissed &&
+                                habit.id !in handledMilestoneDialogHabitIds
+                        }?.let { habit ->
+                            HabitMilestoneDialogState(
+                                habitId = habit.id,
+                                habitName = habit.name
+                            )
+                        }
+                    } else {
+                        null
+                    }
+                    _state.update {
+                        it.copy(
+                            habits = habits,
+                            milestoneDialog = currentDialog ?: nextAutoDialog
+                        )
+                    }
                 }
         }
     }
@@ -125,8 +156,14 @@ class HabitsViewModel(
     }
 
     fun deleteHabit(habitId: String) {
+        handledMilestoneDialogHabitIds.add(habitId)
         viewModelScope.launch {
             repository.deleteHabit(habitId)
+        }
+        _state.update {
+            it.copy(
+                milestoneDialog = it.milestoneDialog?.takeUnless { dialog -> dialog.habitId == habitId }
+            )
         }
     }
 
@@ -139,6 +176,50 @@ class HabitsViewModel(
     fun toggleHabitAlarm(habitId: String, enabled: Boolean) {
         viewModelScope.launch {
             repository.toggleHabitAlarm(habitId, enabled)
+        }
+    }
+
+    fun showMilestoneDialog(habitId: String) {
+        val habit = _state.value.habits.firstOrNull { it.id == habitId && it.hasThirtyDayMilestone }
+            ?: return
+        _state.update {
+            it.copy(
+                milestoneDialog = HabitMilestoneDialogState(
+                    habitId = habit.id,
+                    habitName = habit.name
+                )
+            )
+        }
+    }
+
+    fun dismissMilestoneDialog() {
+        val habitId = _state.value.milestoneDialog?.habitId ?: return
+        handledMilestoneDialogHabitIds.add(habitId)
+        _state.update { it.copy(milestoneDialog = null) }
+        viewModelScope.launch {
+            repository.acknowledgeHabitThirtyDayDialog(habitId)
+        }
+    }
+
+    fun continueHabitStreak() {
+        dismissMilestoneDialog()
+    }
+
+    fun restartHabitFromMilestoneDialog() {
+        val habitId = _state.value.milestoneDialog?.habitId ?: return
+        handledMilestoneDialogHabitIds.add(habitId)
+        _state.update { it.copy(milestoneDialog = null) }
+        viewModelScope.launch {
+            repository.restartHabit(habitId)
+        }
+    }
+
+    fun deleteHabitFromMilestoneDialog() {
+        val habitId = _state.value.milestoneDialog?.habitId ?: return
+        handledMilestoneDialogHabitIds.add(habitId)
+        _state.update { it.copy(milestoneDialog = null) }
+        viewModelScope.launch {
+            repository.deleteHabit(habitId)
         }
     }
 }

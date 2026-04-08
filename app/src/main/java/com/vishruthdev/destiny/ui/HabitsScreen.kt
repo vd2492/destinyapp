@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -116,7 +117,8 @@ fun HabitsScreen(
                     onFlip = { viewModel.toggleFlip(habit.id) },
                     onDelete = { viewModel.deleteHabit(habit.id) },
                     onLongPress = { viewModel.toggleDeleteMode() },
-                    onAlarmToggle = { enabled -> viewModel.toggleHabitAlarm(habit.id, enabled) }
+                    onAlarmToggle = { enabled -> viewModel.toggleHabitAlarm(habit.id, enabled) },
+                    onShowMilestoneDialog = { viewModel.showMilestoneDialog(habit.id) }
                 )
             }
         }
@@ -288,6 +290,16 @@ fun HabitsScreen(
             containerColor = MaterialTheme.colorScheme.surface
         )
     }
+
+    state.milestoneDialog?.let { dialogState ->
+        HabitMilestoneOptionsDialog(
+            dialogState = dialogState,
+            onDismiss = viewModel::dismissMilestoneDialog,
+            onRestart = viewModel::restartHabitFromMilestoneDialog,
+            onDelete = viewModel::deleteHabitFromMilestoneDialog,
+            onContinue = viewModel::continueHabitStreak
+        )
+    }
 }
 
 @Composable
@@ -344,7 +356,8 @@ private fun FlippableHabitCard(
     onFlip: () -> Unit,
     onDelete: () -> Unit,
     onLongPress: () -> Unit,
-    onAlarmToggle: (Boolean) -> Unit
+    onAlarmToggle: (Boolean) -> Unit,
+    onShowMilestoneDialog: () -> Unit
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (isFlipped) 180f else 0f,
@@ -384,6 +397,8 @@ private fun FlippableHabitCard(
                 name = habit.name,
                 alarmEnabled = habit.alarmEnabled,
                 onAlarmToggle = onAlarmToggle,
+                showEditOption = habit.hasThirtyDayMilestone,
+                onShowMilestoneDialog = onShowMilestoneDialog,
                 modifier = Modifier.graphicsLayer { rotationY = 180f }
             )
         }
@@ -521,6 +536,8 @@ private fun CardBack(
     name: String,
     alarmEnabled: Boolean,
     onAlarmToggle: (Boolean) -> Unit,
+    showEditOption: Boolean,
+    onShowMilestoneDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -565,6 +582,16 @@ private fun CardBack(
                         checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f)
                     )
                 )
+            }
+            if (showEditOption) {
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = onShowMilestoneDialog,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Edit options")
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -652,4 +679,72 @@ private fun formatMissedHabitLabel(
         missedDaysCount == 1 -> "Last missed ${formatDate(latestMissedDateMillis)}"
         else -> "$missedDaysCount missed days"
     }
+}
+
+@Composable
+private fun HabitMilestoneOptionsDialog(
+    dialogState: com.vishruthdev.destiny.viewmodel.HabitMilestoneDialogState,
+    onDismiss: () -> Unit,
+    onRestart: () -> Unit,
+    onDelete: () -> Unit,
+    onContinue: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "30-day streak complete",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss dialog"
+                    )
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "${dialogState.habitName} has reached 30 completed days. You can restart the habit, delete it, or keep the streak going.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onRestart,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Restart habit")
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Delete habit")
+                }
+                OutlinedButton(
+                    onClick = onContinue,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, DestinyAccentBlue)
+                ) {
+                    Text(
+                        text = "Continue streak",
+                        color = DestinyAccentBlue
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }

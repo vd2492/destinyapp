@@ -29,7 +29,13 @@ data class RevisionsUiState(
     val revisionHour: Int = 9,
     val revisionMinute: Int = 0,
     val deleteMode: Boolean = false,
-    val flippedTopicId: String? = null
+    val flippedTopicId: String? = null,
+    val completionDialog: RevisionCompletionDialogState? = null
+)
+
+data class RevisionCompletionDialogState(
+    val topicId: String,
+    val topicName: String
 )
 
 class RevisionsViewModel(
@@ -38,15 +44,35 @@ class RevisionsViewModel(
 
     private val _state = MutableStateFlow(RevisionsUiState(topics = emptyList()))
     val state: StateFlow<RevisionsUiState> = _state.asStateFlow()
+    private val handledCompletionDialogTopicIds = mutableSetOf<String>()
 
     init {
         viewModelScope.launch {
             repository.getRevisionTopicsWithProgress()
                 .catch { throwable ->
                     Log.w(TAG, "Failed to load revision topics", throwable)
-                    _state.update { it.copy(topics = emptyList()) }
+                    _state.update { it.copy(topics = emptyList(), completionDialog = null) }
                 }
                 .collect { topics ->
+                    handledCompletionDialogTopicIds.retainAll(
+                        topics.filter { it.isCompleted }.map { it.id }.toSet()
+                    )
+                    val currentDialog = _state.value.completionDialog
+                        ?.takeIf { dialog -> topics.any { it.id == dialog.topicId && it.isCompleted } }
+                    val nextAutoDialog = if (currentDialog == null) {
+                        topics.firstOrNull { topic ->
+                            topic.isCompleted &&
+                                !topic.completionDialogDismissed &&
+                                topic.id !in handledCompletionDialogTopicIds
+                        }?.let { topic ->
+                            RevisionCompletionDialogState(
+                                topicId = topic.id,
+                                topicName = topic.name
+                            )
+                        }
+                    } else {
+                        null
+                    }
                     _state.update {
                         it.copy(
                             topics = topics.sortedWith(
@@ -54,7 +80,8 @@ class RevisionsViewModel(
                                     .thenByDescending { topic -> topic.inProgressDay != null }
                                     .thenByDescending { topic -> topic.activeDay != null }
                                     .thenBy { topic -> topic.actionableDay ?: Int.MAX_VALUE }
-                            )
+                            ),
+                            completionDialog = currentDialog ?: nextAutoDialog
                         )
                     }
                 }
@@ -145,8 +172,14 @@ class RevisionsViewModel(
     }
 
     fun deleteTopic(topicId: String) {
+        handledCompletionDialogTopicIds.add(topicId)
         viewModelScope.launch {
             repository.deleteRevisionTopic(topicId)
+        }
+        _state.update {
+            it.copy(
+                completionDialog = it.completionDialog?.takeUnless { dialog -> dialog.topicId == topicId }
+            )
         }
     }
 
@@ -159,6 +192,45 @@ class RevisionsViewModel(
     fun toggleRevisionAlarm(topicId: String, enabled: Boolean) {
         viewModelScope.launch {
             repository.toggleRevisionAlarm(topicId, enabled)
+        }
+    }
+
+    fun showCompletionDialog(topicId: String) {
+        val topic = _state.value.topics.firstOrNull { it.id == topicId && it.isCompleted } ?: return
+        _state.update {
+            it.copy(
+                completionDialog = RevisionCompletionDialogState(
+                    topicId = topic.id,
+                    topicName = topic.name
+                )
+            )
+        }
+    }
+
+    fun dismissCompletionDialog() {
+        val topicId = _state.value.completionDialog?.topicId ?: return
+        handledCompletionDialogTopicIds.add(topicId)
+        _state.update { it.copy(completionDialog = null) }
+        viewModelScope.launch {
+            repository.acknowledgeRevisionCompletionDialog(topicId)
+        }
+    }
+
+    fun restartCompletedTopic() {
+        val topicId = _state.value.completionDialog?.topicId ?: return
+        handledCompletionDialogTopicIds.add(topicId)
+        _state.update { it.copy(completionDialog = null) }
+        viewModelScope.launch {
+            repository.restartRevisionTopic(topicId)
+        }
+    }
+
+    fun deleteCompletedTopic() {
+        val topicId = _state.value.completionDialog?.topicId ?: return
+        handledCompletionDialogTopicIds.add(topicId)
+        _state.update { it.copy(completionDialog = null) }
+        viewModelScope.launch {
+            repository.deleteRevisionTopic(topicId)
         }
     }
 }
