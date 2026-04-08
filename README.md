@@ -10,11 +10,13 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - Create daily habits with custom start dates and times
 - Three-state completion: Not Started → In Progress → Completed
 - Streak tracking and 30-day completion rate
+- 30-day streak milestone dialog with restart, delete, or continue options
 - Auto-reset on miss — if you skip a day, the habit restarts from Day 1 the next day
 
 **Spaced Revision (1-2-4-7)**
 - Schedule revision topics with automatic day spacing (Day 1, 2, 4, 7)
 - Smart progression — complete previous days before moving forward
+- Completion dialog for fully finished topics with restart or delete options
 - Auto-restart on miss — if you skip a revision day, the plan restarts from Day 1 on the current day
 
 **Reminders**
@@ -36,6 +38,7 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - Material 3 design with dark and light theme
 - Flip card animation for alarm settings
 - Bottom navigation: Today, Habits, Revisions, Settings
+- Version label in the Settings tab
 
 ## How to Use
 
@@ -69,6 +72,8 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 
 **Tracking progress:**
 - Each habit card in the Habits tab shows your **current streak** and **30-day completion rate**
+- When a habit reaches a **30-day streak**, a popup lets you **restart**, **delete**, or **continue** the streak
+- If you dismiss that popup, the habit keeps going and you can reopen the same options from the flipped card via **Edit options**
 
 ### Spaced Revision (1-2-4-7)
 
@@ -87,6 +92,8 @@ The 1-2-4-7 method is a spaced repetition technique: after learning something, y
   - **Completed** (green checkmark) — done
 - Tap **Start Day X** to begin a revision (moves to In Progress)
 - Tap **Mark Day X done** to complete it (moves to Completed, unlocks the next day)
+- After finishing the full **Day 1, 2, 4, 7** cycle, a popup lets you **restart** or **delete** the topic
+- If you dismiss that popup, the topic stays completed and you can reopen the same options from the flipped card via **Edit options**
 - If you miss any revision day, the topic automatically restarts from **Day 1** on the current day
 
 ### Reminders & Alarms
@@ -98,8 +105,14 @@ Every habit and revision gets two reminders by default:
 **Toggling alarms:**
 - In the **Habits** or **Revisions** tab, **tap any card** to flip it
 - The back of the card shows an alarm toggle switch
+- Completed 30-day habits and fully completed revision topics also show an **Edit options** button on the back
 - Turn it off to disable reminders for that specific habit/revision
 - Tap the card again to flip back
+
+### Settings
+
+- The **Settings** tab shows the signed-in account details
+- The bottom-left corner displays the current app version, starting at **Version 1.0**
 
 ### Tips for Efficient Use
 
@@ -169,19 +182,19 @@ users/{uid}
 ├── habits/{habitId}
 │   ├── name, startDateMillis, startHour, startMinute
 │   ├── completionDates[], inProgressDates[]
-│   └── alarmEnabled
+│   └── alarmEnabled, thirtyDayDialogDismissed
 ├── revisionTopics/{topicId}
 │   ├── name, startDateMillis, revisionHour, revisionMinute
 │   ├── completedDays[], inProgressDays[]
-│   └── alarmEnabled
+│   └── alarmEnabled, completionDialogDismissed
 └── notificationTokens/{installationId}
 ```
 
 ## Build & Run
 
 ```bash
-git clone https://github.com/vishruthdev/destiny.git
-cd destiny
+git clone https://github.com/vd2492/destinyapp.git
+cd destinyapp
 # Add local.properties with Firebase credentials (see above)
 ./gradlew assembleDebug
 ```
