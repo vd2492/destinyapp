@@ -3,6 +3,7 @@ package com.vishruthdev.destiny
 import android.app.Application
 import com.vishruthdev.destiny.data.AuthRepository
 import com.vishruthdev.destiny.data.HabitRepository
+import com.vishruthdev.destiny.data.SettingsRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.vishruthdev.destiny.push.PushTokenRepository
@@ -41,11 +42,20 @@ class DestinyApplication : Application() {
         )
     }
 
+    val settingsRepository: SettingsRepository by lazy {
+        SettingsRepository(
+            firebaseConfig = firebaseConfig,
+            firebaseAuth = firebaseAuth,
+            firestore = firestore
+        )
+    }
+
     val habitRepository: HabitRepository by lazy {
         HabitRepository(
             firebaseConfig = firebaseConfig,
             firebaseAuth = firebaseAuth,
-            firestore = firestore
+            firestore = firestore,
+            settingsRepository = settingsRepository
         )
     }
 

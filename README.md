@@ -11,13 +11,13 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - Three-state completion: Not Started → In Progress → Completed
 - Streak tracking and 30-day completion rate
 - 30-day streak milestone dialog with restart, delete, or continue options
-- Auto-reset on miss — if you skip a day, the habit restarts from Day 1 the next day
+- Optional Strict Mode — when enabled, skipping a day restarts the habit from Day 1; when off (default), missed days keep your progress
 
 **Spaced Revision (1-2-4-7)**
 - Schedule revision topics with automatic day spacing (Day 1, 2, 4, 7)
 - Smart progression — complete previous days before moving forward
 - Completion dialog for fully finished topics with restart or delete options
-- Auto-restart on miss — if you skip a revision day, the plan restarts from Day 1 on the current day
+- Optional Strict Mode — when enabled, skipping a revision day restarts the plan from Day 1; when off (default), missed days keep your progress
 
 **Reminders**
 - 10-minute notification before each habit/revision
@@ -65,10 +65,10 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - **Tap a third time** to reset it back to **Not Started**
 - When all habits are completed, a celebration message appears with an undo option (10-second countdown)
 
-**Auto-reset on miss:**
-- If you miss a day (don't complete a habit), it automatically restarts from Day 1 the next day
-- Your streak resets to 0 and completion history clears — you're starting fresh
-- This enforces consistency: the only way to build a streak is to never break the chain
+**Strict Mode (auto-reset on miss):**
+- Controlled by the **Strict Mode** toggle in the **Settings** tab (off by default)
+- When **on**: if you miss a day (don't complete a habit), it automatically restarts from Day 1 the next day — your streak resets to 0 and completion history clears, enforcing an unbroken chain
+- When **off**: missed days no longer reset anything; your habits and revision topics keep their start date and history, so an absence (e.g. not opening the app for a while) won't wipe your progress
 
 **Tracking progress:**
 - Each habit card in the Habits tab shows your **current streak** and **30-day completion rate**

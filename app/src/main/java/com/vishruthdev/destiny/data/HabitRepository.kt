@@ -20,7 +20,8 @@ import java.util.UUID
 class HabitRepository(
     private val firebaseConfig: FirebaseRuntimeConfig,
     private val firebaseAuth: FirebaseAuth?,
-    private val firestore: FirebaseFirestore?
+    private val firestore: FirebaseFirestore?,
+    private val settingsRepository: SettingsRepository
 ) {
 
     fun todayStartMillis(): Long {
@@ -43,6 +44,9 @@ class HabitRepository(
      */
     private fun habitsFlowWithAutoReset(): Flow<List<HabitDocument>> {
         return habitsFlow().map { habits ->
+            // Strict Mode off: never wipe progress on missed days; pass habits through untouched.
+            if (!settingsRepository.isStrictModeEnabled()) return@map habits
+
             val now = Calendar.getInstance().timeInMillis
             val todayStart = todayStartMillis(now)
             val habitsCollection = currentUserHabitsCollection()
@@ -586,6 +590,9 @@ class HabitRepository(
         nowMillis: Long,
         revisionsCollection: com.google.firebase.firestore.CollectionReference?
     ): RevisionTopicDocument {
+        // Strict Mode off: never restart a topic on missed days; return it untouched.
+        if (!settingsRepository.isStrictModeEnabled()) return topic
+
         val missedDay = findMissedRevisionDay(
             startDateMillis = topic.startDateMillis,
             revisionHour = topic.revisionHour,

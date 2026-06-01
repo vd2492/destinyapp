@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vishruthdev.destiny.BuildConfig
 import com.vishruthdev.destiny.data.AuthRepository
+import com.vishruthdev.destiny.data.SettingsRepository
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.flowOf
@@ -34,10 +36,13 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 fun SettingsScreen(
     authRepository: AuthRepository?,
+    settingsRepository: SettingsRepository? = null,
     onLogout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentUser by (authRepository?.currentUser ?: flowOf(null)).collectAsState(initial = null)
+    val strictModeEnabled by (settingsRepository?.strictModeEnabled ?: flowOf(false))
+        .collectAsState(initial = settingsRepository?.isStrictModeEnabled() ?: false)
 
     Column(
         modifier = modifier
@@ -107,6 +112,46 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                ) {
+                    Text(
+                        text = "Strict Mode",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Miss a day and your habits and revisions restart from Day 1. Turn off to keep your progress when you skip a day.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = strictModeEnabled,
+                    onCheckedChange = { settingsRepository?.setStrictModeEnabled(it) }
+                )
             }
         }
 

@@ -26,15 +26,18 @@ exports.sendReminderNotifications = onSchedule("* * * * *", async () => {
   const nowMillis = Date.now();
   const [habitSnapshot, revisionSnapshot] = await Promise.all([
     db.collectionGroup("habits")
+      .where("alarmEnabled", "==", true)
       .where("startDateMillis", "<=", nowMillis)
       .get(),
     db.collectionGroup("revisionTopics")
+      .where("alarmEnabled", "==", true)
       .where("startDateMillis", "<=", nowMillis)
       .get(),
   ]);
 
   let habitDispatches = 0;
   let revisionDispatches = 0;
+  const strictModeCache = new Map();
 
   for (const document of habitSnapshot.docs) {
     const userId = getUserId(document.ref);
@@ -72,7 +75,13 @@ exports.sendReminderNotifications = onSchedule("* * * * *", async () => {
       continue;
     }
 
-    const data = await normalizeRevisionTopic(document.ref, document.data(), nowMillis);
+    // Only restart on a missed day when the user has Strict Mode enabled; otherwise
+    // leave progress untouched (mirrors the client-side Strict Mode behaviour).
+    const strictModeEnabled = await getStrictModeEnabled(userId, strictModeCache);
+    const rawData = document.data();
+    const data = strictModeEnabled
+      ? await normalizeRevisionTopic(document.ref, rawData, nowMillis)
+      : rawData;
     const reminder = findRevisionReminderInWindow(data, nowMillis);
     if (!reminder) {
       continue;
@@ -107,6 +116,31 @@ exports.sendReminderNotifications = onSchedule("* * * * *", async () => {
 
 function getUserId(documentRef) {
   return documentRef.parent.parent ? documentRef.parent.parent.id : null;
+}
+
+async function getStrictModeEnabled(userId, cache) {
+  if (cache.has(userId)) {
+    return cache.get(userId);
+  }
+
+  let enabled = false;
+  try {
+    const snapshot = await db
+      .collection(USERS_COLLECTION).doc(userId)
+      .collection("settings").doc("app")
+      .get();
+    enabled = snapshot.exists && snapshot.get("strictModeEnabled") === true;
+  } catch (error) {
+    // Fail safe: default to lenient so a read error never wipes a user's progress.
+    logger.warn("Failed to read strict mode preference; defaulting to lenient", {
+      userId,
+      error: error.message,
+    });
+    enabled = false;
+  }
+
+  cache.set(userId, enabled);
+  return enabled;
 }
 
 function safeName(value, fallback) {

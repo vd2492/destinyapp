@@ -104,10 +104,14 @@ fun DestinyApp(
             composable(Routes.Settings) {
                 SettingsScreen(
                     authRepository = authRepository,
+                    settingsRepository = app.settingsRepository,
                     onLogout = {
                         val repositoryForLogout = authRepository
                         if (repositoryForLogout != null) {
                             scope.launch {
+                                // Delete the push token while still authenticated;
+                                // after signOut the rules would deny the delete.
+                                runCatching { app.pushTokenRepository.removeCurrentToken() }
                                 repositoryForLogout.logout()
                             }
                         }

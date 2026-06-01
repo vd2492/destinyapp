@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "habits",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "alarmEnabled", "order": "ASCENDING" },
+        { "fieldPath": "startDateMillis", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "revisionTopics",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "alarmEnabled", "order": "ASCENDING" },
+        { "fieldPath": "startDateMillis", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

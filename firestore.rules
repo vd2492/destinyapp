@@ -15,13 +15,24 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Records may not be back-dated below zero or set absurdly far in the future.
+    // createdAt allows a small forward skew; startDate allows up to ~10 years ahead.
+    function validCreatedAt(value) {
+      return value is int && value > 0 && value <= request.time.toMillis() + 60000;
+    }
+
+    function validStartDate(value) {
+      return value is int && value > 0 && value < request.time.toMillis() + 315360000000;
+    }
+
     function validUserProfile(userId) {
       return request.resource.data.keys().hasOnly([
         'uid',
         'email',
         'displayName',
         'createdAtMillis',
-        'updatedAtMillis'
+        'updatedAtMillis',
+        'strictModeEnabled'
       ]) &&
       request.resource.data.uid == userId &&
       request.resource.data.email is string &&
@@ -33,6 +44,10 @@ service cloud.firestore {
       request.resource.data.createdAtMillis is int &&
       request.resource.data.updatedAtMillis is int &&
       request.resource.data.updatedAtMillis >= request.resource.data.createdAtMillis &&
+      (
+        !request.resource.data.keys().hasAny(['strictModeEnabled']) ||
+        request.resource.data.strictModeEnabled is bool
+      ) &&
       keepsCreatedAt();
     }
 
@@ -53,8 +68,8 @@ service cloud.firestore {
       request.resource.data.name is string &&
       request.resource.data.name.size() > 0 &&
       request.resource.data.name.size() <= 120 &&
-      request.resource.data.createdAtMillis is int &&
-      request.resource.data.startDateMillis is int &&
+      validCreatedAt(request.resource.data.createdAtMillis) &&
+      validStartDate(request.resource.data.startDateMillis) &&
       request.resource.data.startHour is int &&
       request.resource.data.startHour >= 0 &&
       request.resource.data.startHour <= 23 &&
@@ -62,9 +77,13 @@ service cloud.firestore {
       request.resource.data.startMinute >= 0 &&
       request.resource.data.startMinute <= 59 &&
       request.resource.data.completionDates is list &&
+      request.resource.data.completionDates.size() <= 5000 &&
       (
         !request.resource.data.keys().hasAny(['inProgressDates']) ||
-        request.resource.data.inProgressDates is list
+        (
+          request.resource.data.inProgressDates is list &&
+          request.resource.data.inProgressDates.size() <= 5000
+        )
       ) &&
       (
         !request.resource.data.keys().hasAny(['alarmEnabled']) ||
@@ -94,8 +113,8 @@ service cloud.firestore {
       request.resource.data.name is string &&
       request.resource.data.name.size() > 0 &&
       request.resource.data.name.size() <= 120 &&
-      request.resource.data.createdAtMillis is int &&
-      request.resource.data.startDateMillis is int &&
+      validCreatedAt(request.resource.data.createdAtMillis) &&
+      validStartDate(request.resource.data.startDateMillis) &&
       request.resource.data.revisionHour is int &&
       request.resource.data.revisionHour >= 0 &&
       request.resource.data.revisionHour <= 23 &&
@@ -103,9 +122,13 @@ service cloud.firestore {
       request.resource.data.revisionMinute >= 0 &&
       request.resource.data.revisionMinute <= 59 &&
       request.resource.data.completedDays is list &&
+      request.resource.data.completedDays.size() <= 50 &&
       (
         !request.resource.data.keys().hasAny(['inProgressDays']) ||
-        request.resource.data.inProgressDays is list
+        (
+          request.resource.data.inProgressDays is list &&
+          request.resource.data.inProgressDays.size() <= 50
+        )
       ) &&
       (
         !request.resource.data.keys().hasAny(['alarmEnabled']) ||
@@ -166,6 +189,16 @@ service cloud.firestore {
       match /notificationTokens/{tokenId} {
         allow read: if isOwner(userId);
         allow create, update: if isOwner(userId) && validNotificationToken(tokenId);
+        allow delete: if isOwner(userId);
+      }
+
+      // App preferences (e.g. Strict Mode). Self-contained so it never depends on
+      // the user profile document existing or being fully valid.
+      match /settings/{settingId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly(['strictModeEnabled']) &&
+          request.resource.data.strictModeEnabled is bool;
         allow delete: if isOwner(userId);
       }
     }

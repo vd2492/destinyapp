@@ -56,6 +56,15 @@ class PushTokenRepository(
         ).awaitResult()
     }
 
+    /**
+     * Removes the current device's token for the signed-in user. Must be called
+     * *before* signing out, while the user still has permission to delete the doc.
+     */
+    suspend fun removeCurrentToken() {
+        val uid = firebaseAuth?.currentUser?.uid ?: return
+        removeTokenForUser(uid)
+    }
+
     suspend fun removeTokenForUser(userId: String) {
         if (!firebaseConfig.isBaseConfigured || firestore == null) return
 
