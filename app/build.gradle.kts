@@ -20,6 +20,16 @@ fun localConfig(name: String): String {
         .replace("\"", "\\\"")
 }
 
+// Release signing is driven by a gitignored keystore.properties at the repo root.
+// When it's absent (e.g. CI without secrets, or before you generate a keystore),
+// the release build is simply left unsigned instead of failing.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use(::load)
+    }
+}
+
 android {
     namespace = "com.vishruthdev.destiny"
     compileSdk {
@@ -43,6 +53,17 @@ android {
         buildConfigField("String", "FIREBASE_WEB_CLIENT_ID", "\"${localConfig("firebase.webClientId")}\"")
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -50,6 +71,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

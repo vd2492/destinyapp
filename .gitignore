@@ -14,3 +14,9 @@
 .cxx
 local.properties
 /functions/node_modules
+
+# Release signing — never commit the keystore or its passwords
+/keystore.properties
+*.jks
+*.keystore
+.env
