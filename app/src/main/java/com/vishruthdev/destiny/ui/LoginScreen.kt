@@ -65,6 +65,9 @@ fun LoginScreen(
     googleWebClientId: String,
     authRegister: suspend (username: String, email: String, password: String) -> Result<Unit>,
     authLogin: suspend (email: String, password: String) -> Result<Unit>,
+    authResetPassword: suspend (email: String) -> Result<Unit> = {
+        Result.failure(UnsupportedOperationException("Password reset not configured"))
+    },
     authLoginWithGoogle: suspend (idToken: String) -> Result<Unit> = {
         Result.failure(UnsupportedOperationException("Google Sign-In not configured"))
     },
@@ -212,8 +215,41 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    TextButton(
+                        enabled = firebaseConfigured && !isSubmitting,
+                        onClick = {
+                            errorMessage = null
+                            successMessage = null
+                            val resetEmail = loginEmail.trim()
+                            if (resetEmail.isBlank()) {
+                                errorMessage = "Enter your email above, then tap Forgot password"
+                                return@TextButton
+                            }
+                            isSubmitting = true
+                            scope.launch {
+                                val result = authResetPassword(resetEmail)
+                                result.fold(
+                                    onSuccess = {
+                                        successMessage = "If an account exists for $resetEmail, " +
+                                            "a reset link is on its way. Check your spam folder too."
+                                    },
+                                    onFailure = {
+                                        errorMessage = it.message ?: "Could not send the reset email"
+                                    }
+                                )
+                                isSubmitting = false
+                            }
+                        }
+                    ) {
+                        Text(
+                            text = "Forgot password?",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     TextButton(
                         enabled = firebaseConfigured && !isSubmitting,
                         onClick = {

@@ -155,6 +155,8 @@ fun SettingsScreen(
             }
         }
 
+        ExactAlarmPermissionCard()
+
         Spacer(modifier = Modifier.weight(1f))
 
         Text(

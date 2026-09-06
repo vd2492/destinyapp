@@ -170,20 +170,20 @@ class ReminderScheduler(context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        if (isAlarm) {
-            // Use setAlarmClock for device alarms — guarantees firing and shows alarm icon
-            alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent),
-                pendingIntent
-            )
+        val canUseExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms()
         } else {
-            val canUseExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                alarmManager.canScheduleExactAlarms()
-            } else {
-                true
-            }
+            true
+        }
 
-            if (canUseExact) {
+        try {
+            if (canUseExact && isAlarm) {
+                // Use setAlarmClock for device alarms — guarantees firing and shows alarm icon
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent),
+                    pendingIntent
+                )
+            } else if (canUseExact) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     triggerAtMillis,
@@ -196,6 +196,14 @@ class ReminderScheduler(context: Context) {
                     pendingIntent
                 )
             }
+        } catch (e: SecurityException) {
+            // Exact-alarm access can be revoked between the check above and the call.
+            Log.w(TAG, "Exact alarm denied, falling back to inexact", e)
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pendingIntent
+            )
         }
     }
 
@@ -232,7 +240,7 @@ class ReminderScheduler(context: Context) {
     private fun revisionNotifyRequestCode(id: String) = "revision_notify:$id".hashCode()
     private fun revisionAlarmRequestCode(id: String) = "revision_alarm:$id".hashCode()
 
-    private companion object {
+    internal companion object {
         const val TAG = "ReminderScheduler"
         const val PREFS_NAME = "reminder_alarms"
         const val KEY_ACTIVE_CODES = "active_codes"

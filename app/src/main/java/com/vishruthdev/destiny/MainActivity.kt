@@ -36,6 +36,9 @@ class MainActivity : ComponentActivity() {
                         authLogin = { email, password ->
                             app.authRepository.login(email, password)
                         },
+                        authResetPassword = { email ->
+                            app.authRepository.sendPasswordReset(email)
+                        },
                         authLoginWithGoogle = { idToken ->
                             app.authRepository.loginWithGoogleIdToken(idToken)
                         }

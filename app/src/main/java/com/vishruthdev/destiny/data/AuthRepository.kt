@@ -113,6 +113,40 @@ class AuthRepository(
         )
     }
 
+    /**
+     * Sends a Firebase password-reset email. Accounts created through Google Sign-In have
+     * no password, and an address with no account must not be distinguishable from one
+     * that has — both cases resolve successfully and the caller shows a neutral message.
+     */
+    suspend fun sendPasswordReset(email: String): Result<Unit> {
+        val auth = firebaseAuth ?: return configurationFailure()
+        val trimmedEmail = email.trim()
+
+        if (trimmedEmail.isBlank()) {
+            return Result.failure(IllegalArgumentException("Email is required"))
+        }
+
+        return runCatching {
+            auth.sendPasswordResetEmail(trimmedEmail).awaitResult()
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { throwable ->
+                when (throwable) {
+                    // Do not leak whether an account exists for this address.
+                    is FirebaseAuthInvalidUserException -> Result.success(Unit)
+                    is FirebaseAuthInvalidCredentialsException -> Result.failure(
+                        IllegalArgumentException("Enter a valid email address")
+                    )
+                    else -> Result.failure(
+                        IllegalArgumentException(
+                            throwable.localizedMessage ?: "Could not send the reset email"
+                        )
+                    )
+                }
+            }
+        )
+    }
+
     suspend fun loginWithGoogleIdToken(idToken: String): Result<Unit> {
         val auth = firebaseAuth ?: return configurationFailure()
         val db = firestore ?: return configurationFailure()

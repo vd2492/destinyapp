@@ -14,6 +14,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 
+/**
+ * Whether the system notification prompt is currently on screen, so other first-run
+ * asks can wait rather than stacking behind it.
+ */
+internal object NotificationPermissionFlow {
+    var isRequestInFlight by mutableStateOf(false)
+}
+
 @Composable
 fun NotificationPermissionEffect() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
@@ -22,7 +30,9 @@ fun NotificationPermissionEffect() {
     var hasRequestedPermission by remember { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { }
+    ) {
+        NotificationPermissionFlow.isRequestInFlight = false
+    }
 
     LaunchedEffect(Unit) {
         val hasPermission = ContextCompat.checkSelfPermission(
@@ -32,6 +42,7 @@ fun NotificationPermissionEffect() {
 
         if (!hasPermission && !hasRequestedPermission) {
             hasRequestedPermission = true
+            NotificationPermissionFlow.isRequestInFlight = true
             launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }

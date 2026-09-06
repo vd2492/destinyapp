@@ -45,6 +45,8 @@ fun DestinyApp(
     authRepository: AuthRepository? = null
 ) {
     NotificationPermissionEffect()
+    ExactAlarmAccessEffect()
+    ExactAlarmPromptDialog()
 
     val navController = rememberNavController()
     val app = LocalContext.current.applicationContext as DestinyApplication

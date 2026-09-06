@@ -75,6 +75,11 @@ class DestinyApplication : Application() {
         )
     }
 
+    /** Re-runs reminder scheduling; called after exact-alarm access is granted. */
+    fun refreshReminders() {
+        reminderScheduleManager.refresh()
+    }
+
     private val reminderScheduler: ReminderScheduler by lazy {
         ReminderScheduler(this)
     }
