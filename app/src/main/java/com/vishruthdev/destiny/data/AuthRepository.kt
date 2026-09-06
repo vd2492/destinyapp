@@ -1,8 +1,11 @@
 package com.vishruthdev.destiny.data
 
 import android.content.Context
+import android.util.Log
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
+import com.google.firebase.auth.AuthCredential
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
@@ -175,18 +178,57 @@ class AuthRepository(
         )
     }
 
+    /** How the signed-in user authenticates, which decides how they re-authenticate. */
+    enum class SignInMethod { Password, Google, Unknown }
+
+    fun currentSignInMethod(): SignInMethod {
+        val providers = firebaseAuth?.currentUser?.providerData?.map { it.providerId }.orEmpty()
+        return when {
+            providers.contains(EmailAuthProvider.PROVIDER_ID) -> SignInMethod.Password
+            providers.contains(GoogleAuthProvider.PROVIDER_ID) -> SignInMethod.Google
+            else -> SignInMethod.Unknown
+        }
+    }
+
+    fun currentUserEmail(): String? = firebaseAuth?.currentUser?.email
+
+    /** Deletes an email/password account after confirming the password. */
+    suspend fun deleteAccountWithPassword(password: String): Result<Unit> {
+        val email = firebaseAuth?.currentUser?.email
+            ?: return Result.failure(IllegalStateException("No signed-in account to delete"))
+        if (password.isBlank()) {
+            return Result.failure(IllegalArgumentException("Enter your password to confirm"))
+        }
+        return reauthenticateAndDelete(EmailAuthProvider.getCredential(email, password))
+    }
+
+    /** Deletes a Google account after a fresh Google credential has been obtained. */
+    suspend fun deleteAccountWithGoogleIdToken(idToken: String): Result<Unit> =
+        reauthenticateAndDelete(GoogleAuthProvider.getCredential(idToken, null))
+
     /**
-     * Permanently deletes the signed-in account: Firestore data first, then the auth
-     * user. Order matters — once the auth user is gone the security rules deny every
-     * write, so anything left behind would be unreachable and undeletable. Cloud
-     * Functions are not deployed, so there is no server-side cleanup to fall back on.
+     * Re-authenticates before destroying anything. Firebase refuses to delete a user
+     * whose sign-in is stale, and the deletion order is forced: Firestore data has to go
+     * first, because once the auth user is gone the rules deny every write and anything
+     * left behind is unreachable. Deleting data first and only then discovering the auth
+     * delete is not permitted would leave a hollowed-out account, so the re-auth happens
+     * up front and nothing is removed until it succeeds.
+     *
+     * On failure the user stays signed in, so the caller's screen survives to show why.
      */
-    suspend fun deleteAccount(): Result<Unit> {
+    private suspend fun reauthenticateAndDelete(credential: AuthCredential): Result<Unit> {
         val auth = firebaseAuth ?: return configurationFailure()
         val db = firestore ?: return configurationFailure()
         val user = auth.currentUser
             ?: return Result.failure(IllegalStateException("No signed-in account to delete"))
         val uid = user.uid
+
+        val reauthFailure = runCatching { user.reauthenticate(credential).awaitResult() }
+            .exceptionOrNull()
+        if (reauthFailure != null) {
+            Log.w(TAG, "Re-authentication failed; nothing was deleted", reauthFailure)
+            return Result.failure(mapReauthException(reauthFailure))
+        }
 
         return runCatching {
             deleteUserData(db, uid)
@@ -196,26 +238,26 @@ class AuthRepository(
         }.fold(
             onSuccess = { Result.success(Unit) },
             onFailure = { throwable ->
-                when (throwable) {
-                    is FirebaseAuthRecentLoginRequiredException -> {
-                        // Firebase requires a fresh sign-in before deleting a user. The
-                        // stored data is already gone, so signing out lets them come
-                        // straight back and finish the job.
-                        auth.signOut()
-                        _currentUser.value = null
-                        Result.failure(
-                            IllegalStateException(
-                                "For your security, sign in again and then delete your account."
-                            )
-                        )
-                    }
-                    else -> Result.failure(
-                        IllegalArgumentException(
-                            throwable.localizedMessage ?: "Could not delete the account"
-                        )
+                Log.w(TAG, "Account deletion failed after re-authentication", throwable)
+                Result.failure(
+                    IllegalStateException(
+                        throwable.localizedMessage
+                            ?: "Could not delete the account. Please try again."
                     )
-                }
+                )
             }
+        )
+    }
+
+    private fun mapReauthException(throwable: Throwable): Throwable = when (throwable) {
+        is FirebaseAuthInvalidCredentialsException ->
+            IllegalArgumentException("Incorrect password")
+        is FirebaseAuthInvalidUserException ->
+            IllegalStateException("This account no longer exists")
+        is FirebaseAuthRecentLoginRequiredException ->
+            IllegalStateException("Sign in again, then delete your account")
+        else -> IllegalStateException(
+            throwable.localizedMessage ?: "Could not confirm your identity"
         )
     }
 
@@ -295,6 +337,7 @@ class AuthRepository(
     )
 
     private companion object {
+        const val TAG = "AuthRepository"
         const val USERS_COLLECTION = "users"
 
         // Every subcollection written under users/{uid}; all are removed on deletion.

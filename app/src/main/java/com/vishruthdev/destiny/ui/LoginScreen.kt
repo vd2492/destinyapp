@@ -487,7 +487,7 @@ private fun textFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedTextColor = MaterialTheme.colorScheme.onSurface
 )
 
-private suspend fun requestGoogleIdToken(
+internal suspend fun requestGoogleIdToken(
     credentialManager: CredentialManager,
     activity: Activity,
     webClientId: String
@@ -509,7 +509,7 @@ private fun googleCredentialRequest(webClientId: String): GetCredentialRequest {
         .build()
 }
 
-private fun mapGoogleSignInError(throwable: Throwable): String {
+internal fun mapGoogleSignInError(throwable: Throwable): String {
     if (throwable is NoCredentialException) {
         return "No Google account was available to sign in."
     }

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -28,10 +29,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vishruthdev.destiny.BuildConfig
+import android.app.Activity
+import androidx.credentials.CredentialManager
 import com.vishruthdev.destiny.data.AuthRepository
 import com.vishruthdev.destiny.data.SettingsRepository
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
@@ -51,8 +56,12 @@ fun SettingsScreen(
         .collectAsState(initial = settingsRepository?.isStrictModeEnabled() ?: false)
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val credentialManager = remember(context) { CredentialManager.create(context) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
+    var deletePassword by remember { mutableStateOf("") }
     var deleteError by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -214,6 +223,7 @@ fun SettingsScreen(
                         enabled = !isDeleting,
                         onClick = {
                             deleteError = null
+                            deletePassword = ""
                             showDeleteDialog = true
                         },
                         shape = RoundedCornerShape(12.dp)
@@ -229,8 +239,30 @@ fun SettingsScreen(
         }
 
         if (showDeleteDialog && authRepository != null) {
+            val signInMethod = authRepository.currentSignInMethod()
+            val usesPassword = signInMethod == AuthRepository.SignInMethod.Password
+
+            // Re-authentication happens before anything is deleted, so a failure here
+            // leaves the account completely intact.
+            val runDeletion: (suspend () -> Result<Unit>) -> Unit = { block ->
+                isDeleting = true
+                deleteError = null
+                scope.launch {
+                    block().fold(
+                        // On success the auth state clears and the app returns to the
+                        // login screen on its own.
+                        onSuccess = { showDeleteDialog = false },
+                        onFailure = {
+                            // Stay on the dialog so the reason is actually visible.
+                            deleteError = it.message ?: "Could not delete the account"
+                        }
+                    )
+                    isDeleting = false
+                }
+            }
+
             AlertDialog(
-                onDismissRequest = { showDeleteDialog = false },
+                onDismissRequest = { if (!isDeleting) showDeleteDialog = false },
                 title = {
                     Text(
                         text = "Delete account?",
@@ -241,33 +273,88 @@ fun SettingsScreen(
                     )
                 },
                 text = {
-                    Text(
-                        text = "Your account and all of its data are erased permanently. Your habits, revision topics, streaks and settings cannot be recovered afterwards.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Your account and all of its data are erased permanently. Your habits, revision topics, streaks and settings cannot be recovered afterwards.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = if (usesPassword) {
+                                "Enter your password to confirm it is you."
+                            } else {
+                                "You will be asked to confirm with Google before anything is deleted."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (usesPassword) {
+                            OutlinedTextField(
+                                value = deletePassword,
+                                onValueChange = { deletePassword = it },
+                                label = { Text("Password") },
+                                singleLine = true,
+                                enabled = !isDeleting,
+                                visualTransformation = PasswordVisualTransformation(),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        deleteError?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 },
                 confirmButton = {
                     OutlinedButton(
+                        enabled = !isDeleting,
                         onClick = {
-                            showDeleteDialog = false
-                            isDeleting = true
-                            scope.launch {
-                                authRepository.deleteAccount().fold(
-                                    // On success the auth state clears and the app
-                                    // returns to the login screen on its own.
-                                    onSuccess = { },
-                                    onFailure = {
-                                        deleteError = it.message ?: "Could not delete the account"
+                            if (usesPassword) {
+                                val password = deletePassword
+                                runDeletion { authRepository.deleteAccountWithPassword(password) }
+                            } else {
+                                val currentActivity = activity
+                                if (currentActivity == null) {
+                                    deleteError = "Unable to confirm with Google"
+                                } else {
+                                    isDeleting = true
+                                    deleteError = null
+                                    scope.launch {
+                                        runCatching {
+                                            requestGoogleIdToken(
+                                                credentialManager = credentialManager,
+                                                activity = currentActivity,
+                                                webClientId = authRepository.googleWebClientId
+                                            )
+                                        }.fold(
+                                            onSuccess = { idToken ->
+                                                authRepository
+                                                    .deleteAccountWithGoogleIdToken(idToken)
+                                                    .fold(
+                                                        onSuccess = { showDeleteDialog = false },
+                                                        onFailure = {
+                                                            deleteError = it.message
+                                                                ?: "Could not delete the account"
+                                                        }
+                                                    )
+                                            },
+                                            onFailure = {
+                                                deleteError = mapGoogleSignInError(it)
+                                            }
+                                        )
+                                        isDeleting = false
                                     }
-                                )
-                                isDeleting = false
+                                }
                             }
                         },
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            "Delete",
+                            if (isDeleting) "Deleting..." else "Delete",
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -275,6 +362,7 @@ fun SettingsScreen(
                 },
                 dismissButton = {
                     OutlinedButton(
+                        enabled = !isDeleting,
                         onClick = { showDeleteDialog = false },
                         shape = RoundedCornerShape(12.dp)
                     ) {
