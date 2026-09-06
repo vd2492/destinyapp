@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -21,6 +22,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +37,7 @@ import com.vishruthdev.destiny.data.SettingsRepository
 import com.vishruthdev.destiny.ui.theme.DestinyAccentBlue
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -43,6 +49,11 @@ fun SettingsScreen(
     val currentUser by (authRepository?.currentUser ?: flowOf(null)).collectAsState(initial = null)
     val strictModeEnabled by (settingsRepository?.strictModeEnabled ?: flowOf(false))
         .collectAsState(initial = settingsRepository?.isStrictModeEnabled() ?: false)
+
+    val scope = rememberCoroutineScope()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -156,6 +167,125 @@ fun SettingsScreen(
         }
 
         ExactAlarmPermissionCard()
+
+        if (currentUser != null && authRepository != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 12.dp)
+                    ) {
+                        Text(
+                            text = "Delete account",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Permanently removes your account along with every habit, revision topic and setting. This cannot be undone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        deleteError?.let { message ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        enabled = !isDeleting,
+                        onClick = {
+                            deleteError = null
+                            showDeleteDialog = true
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (isDeleting) "Deleting..." else "Delete",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showDeleteDialog && authRepository != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = {
+                    Text(
+                        text = "Delete account?",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Your account and all of its data are erased permanently. Your habits, revision topics, streaks and settings cannot be recovered afterwards.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    OutlinedButton(
+                        onClick = {
+                            showDeleteDialog = false
+                            isDeleting = true
+                            scope.launch {
+                                authRepository.deleteAccount().fold(
+                                    // On success the auth state clears and the app
+                                    // returns to the login screen on its own.
+                                    onSuccess = { },
+                                    onFailure = {
+                                        deleteError = it.message ?: "Could not delete the account"
+                                    }
+                                )
+                                isDeleting = false
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            "Delete",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showDeleteDialog = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            "Cancel",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            )
+        }
 
         Spacer(modifier = Modifier.weight(1f))
 

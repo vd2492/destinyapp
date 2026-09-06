@@ -6,6 +6,7 @@ import androidx.credentials.CredentialManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.GoogleAuthProvider
@@ -174,6 +175,61 @@ class AuthRepository(
         )
     }
 
+    /**
+     * Permanently deletes the signed-in account: Firestore data first, then the auth
+     * user. Order matters — once the auth user is gone the security rules deny every
+     * write, so anything left behind would be unreachable and undeletable. Cloud
+     * Functions are not deployed, so there is no server-side cleanup to fall back on.
+     */
+    suspend fun deleteAccount(): Result<Unit> {
+        val auth = firebaseAuth ?: return configurationFailure()
+        val db = firestore ?: return configurationFailure()
+        val user = auth.currentUser
+            ?: return Result.failure(IllegalStateException("No signed-in account to delete"))
+        val uid = user.uid
+
+        return runCatching {
+            deleteUserData(db, uid)
+            user.delete().awaitResult()
+            _currentUser.value = null
+            runCatching { credentialManager.clearCredentialState(ClearCredentialStateRequest()) }
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { throwable ->
+                when (throwable) {
+                    is FirebaseAuthRecentLoginRequiredException -> {
+                        // Firebase requires a fresh sign-in before deleting a user. The
+                        // stored data is already gone, so signing out lets them come
+                        // straight back and finish the job.
+                        auth.signOut()
+                        _currentUser.value = null
+                        Result.failure(
+                            IllegalStateException(
+                                "For your security, sign in again and then delete your account."
+                            )
+                        )
+                    }
+                    else -> Result.failure(
+                        IllegalArgumentException(
+                            throwable.localizedMessage ?: "Could not delete the account"
+                        )
+                    )
+                }
+            }
+        )
+    }
+
+    private suspend fun deleteUserData(firestore: FirebaseFirestore, uid: String) {
+        val userDocument = firestore.collection(USERS_COLLECTION).document(uid)
+        for (subcollection in USER_SUBCOLLECTIONS) {
+            val snapshot = userDocument.collection(subcollection).get().awaitResult()
+            for (document in snapshot.documents) {
+                document.reference.delete().awaitResult()
+            }
+        }
+        userDocument.delete().awaitResult()
+    }
+
     suspend fun logout() {
         firebaseAuth?.signOut()
         _currentUser.value = null
@@ -240,5 +296,13 @@ class AuthRepository(
 
     private companion object {
         const val USERS_COLLECTION = "users"
+
+        // Every subcollection written under users/{uid}; all are removed on deletion.
+        val USER_SUBCOLLECTIONS = listOf(
+            "habits",
+            "revisionTopics",
+            "notificationTokens",
+            "settings"
+        )
     }
 }
