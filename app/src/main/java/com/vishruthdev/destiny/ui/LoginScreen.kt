@@ -352,6 +352,13 @@ fun LoginScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "By creating an account you confirm you are 13 or older.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
