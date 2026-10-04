@@ -52,15 +52,11 @@ class AuthRepository(
         firebaseAuth?.addAuthStateListener(authStateListener)
     }
 
-    suspend fun register(username: String, email: String, password: String): Result<Unit> {
+    suspend fun register(email: String, password: String): Result<Unit> {
         val auth = firebaseAuth ?: return configurationFailure()
         val db = firestore ?: return configurationFailure()
-        val displayName = username.trim()
         val trimmedEmail = email.trim()
 
-        if (displayName.isBlank()) {
-            return Result.failure(IllegalArgumentException("Username is required"))
-        }
         if (trimmedEmail.isBlank()) {
             return Result.failure(IllegalArgumentException("Email is required"))
         }
@@ -71,17 +67,13 @@ class AuthRepository(
         return runCatching {
             val authResult = auth.createUserWithEmailAndPassword(trimmedEmail, password).awaitResult()
             val user = authResult.user ?: error("Registration failed")
-            val profileUpdate = UserProfileChangeRequest.Builder()
-                .setDisplayName(displayName)
-                .build()
-            user.updateProfile(profileUpdate).awaitResult()
             saveUserProfile(
                 firestore = db,
                 uid = user.uid,
                 email = user.email ?: trimmedEmail,
-                displayName = displayName
+                displayName = user.toDisplayLabel().orEmpty()
             )
-            _currentUser.value = displayName
+            _currentUser.value = user.toDisplayLabel()
         }.fold(
             onSuccess = { Result.success(Unit) },
             onFailure = { throwable ->
@@ -192,6 +184,50 @@ class AuthRepository(
 
     fun currentUserEmail(): String? = firebaseAuth?.currentUser?.email
 
+    fun currentUserId(): String? = firebaseAuth?.currentUser?.uid
+
+    /**
+     * Sets the name shown in Settings. Updates the Firebase profile and mirrors it to the
+     * user's Firestore document so the two never disagree.
+     */
+    suspend fun updateDisplayName(name: String): Result<Unit> {
+        val user = firebaseAuth?.currentUser ?: return configurationFailure()
+        val db = firestore ?: return configurationFailure()
+        val trimmed = name.trim()
+
+        if (trimmed.isBlank()) {
+            return Result.failure(IllegalArgumentException("Name cannot be empty"))
+        }
+        if (trimmed.length > MAX_DISPLAY_NAME_LENGTH) {
+            return Result.failure(
+                IllegalArgumentException("Name must be $MAX_DISPLAY_NAME_LENGTH characters or fewer")
+            )
+        }
+
+        return runCatching {
+            user.updateProfile(
+                UserProfileChangeRequest.Builder().setDisplayName(trimmed).build()
+            ).awaitResult()
+            saveUserProfile(
+                firestore = db,
+                uid = user.uid,
+                email = user.email.orEmpty(),
+                displayName = trimmed
+            )
+            // Profile updates don't trigger the auth-state listener, so publish it here.
+            _currentUser.value = user.toDisplayLabel()
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { throwable ->
+                Result.failure(mapAuthException(throwable, "Could not update your name"))
+            }
+        )
+    }
+
+    /** The user's display name if one is set, without falling back to the email. */
+    fun currentDisplayName(): String? =
+        firebaseAuth?.currentUser?.displayName?.takeIf { it.isNotBlank() }
+
     /** Deletes an email/password account after confirming the password. */
     suspend fun deleteAccountWithPassword(password: String): Result<Unit> {
         val email = firebaseAuth?.currentUser?.email
@@ -296,7 +332,7 @@ class AuthRepository(
             UserProfileDocument(
                 uid = uid,
                 email = email,
-                displayName = displayName.ifBlank { email },
+                displayName = displayName.ifBlank { email }.take(MAX_PROFILE_NAME_LENGTH),
                 updatedAtMillis = now,
                 createdAtMillis = createdAtMillis
             ),
@@ -339,6 +375,10 @@ class AuthRepository(
     private companion object {
         const val TAG = "AuthRepository"
         const val USERS_COLLECTION = "users"
+        const val MAX_DISPLAY_NAME_LENGTH = 40
+
+        // Mirrors the displayName size limit in firestore.rules.
+        const val MAX_PROFILE_NAME_LENGTH = 100
 
         // Every subcollection written under users/{uid}; all are removed on deletion.
         val USER_SUBCOLLECTIONS = listOf(

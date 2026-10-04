@@ -209,20 +209,20 @@ fun HabitsScreen(
                         FilterChip(
                             selected = state.startOption == HabitStartOption.Today,
                             onClick = { viewModel.updateStartOption(HabitStartOption.Today) },
-                            label = { Text("Today") },
-                            modifier = Modifier.weight(1f)
+                            label = { StartOptionLabel("Today") },
+                            modifier = Modifier.weight(0.8f)
                         )
                         FilterChip(
                             selected = state.startOption == HabitStartOption.Tomorrow,
                             onClick = { viewModel.updateStartOption(HabitStartOption.Tomorrow) },
-                            label = { Text("Tomorrow") },
-                            modifier = Modifier.weight(1f)
+                            label = { StartOptionLabel("Tomorrow") },
+                            modifier = Modifier.weight(1.1f)
                         )
                         FilterChip(
                             selected = state.startOption == HabitStartOption.Custom,
                             onClick = { viewModel.updateStartOption(HabitStartOption.Custom) },
-                            label = { Text("Pick Date") },
-                            modifier = Modifier.weight(1f)
+                            label = { StartOptionLabel("Pick Date") },
+                            modifier = Modifier.weight(1.1f)
                         )
                     }
 

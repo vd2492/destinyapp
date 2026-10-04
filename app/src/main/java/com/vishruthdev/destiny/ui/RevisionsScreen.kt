@@ -248,20 +248,20 @@ fun RevisionsScreen(
                         FilterChip(
                             selected = state.startOption == RevisionStartOption.Today,
                             onClick = { viewModel.updateStartOption(RevisionStartOption.Today) },
-                            label = { Text("Today") },
-                            modifier = Modifier.weight(1f)
+                            label = { StartOptionLabel("Today") },
+                            modifier = Modifier.weight(0.8f)
                         )
                         FilterChip(
                             selected = state.startOption == RevisionStartOption.Tomorrow,
                             onClick = { viewModel.updateStartOption(RevisionStartOption.Tomorrow) },
-                            label = { Text("Tomorrow") },
-                            modifier = Modifier.weight(1f)
+                            label = { StartOptionLabel("Tomorrow") },
+                            modifier = Modifier.weight(1.1f)
                         )
                         FilterChip(
                             selected = state.startOption == RevisionStartOption.Custom,
                             onClick = { viewModel.updateStartOption(RevisionStartOption.Custom) },
-                            label = { Text("Pick Date") },
-                            modifier = Modifier.weight(1f)
+                            label = { StartOptionLabel("Pick Date") },
+                            modifier = Modifier.weight(1.1f)
                         )
                     }
 

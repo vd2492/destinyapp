@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -40,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -63,7 +66,7 @@ fun LoginScreen(
     firebaseConfigured: Boolean,
     googleSignInConfigured: Boolean,
     googleWebClientId: String,
-    authRegister: suspend (username: String, email: String, password: String) -> Result<Unit>,
+    authRegister: suspend (email: String, password: String) -> Result<Unit>,
     authLogin: suspend (email: String, password: String) -> Result<Unit>,
     authResetPassword: suspend (email: String) -> Result<Unit> = {
         Result.failure(UnsupportedOperationException("Password reset not configured"))
@@ -74,17 +77,14 @@ fun LoginScreen(
     modifier: Modifier = Modifier
 ) {
     var mode by remember { mutableStateOf(LoginMode.Login) }
-    var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
     var loginEmail by remember { mutableStateOf("") }
     var loginPassword by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
     var loginPasswordVisible by remember { mutableStateOf(false) }
     var createPasswordVisible by remember { mutableStateOf(false) }
-    var createConfirmPasswordVisible by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -213,10 +213,38 @@ fun LoginScreen(
                     colors = textFieldColors()
                 )
                 Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    enabled = firebaseConfigured && !isSubmitting,
+                    onClick = {
+                        errorMessage = null
+                        successMessage = null
+                        isSubmitting = true
+                        scope.launch {
+                            val result = authLogin(loginEmail.trim(), loginPassword)
+                            result.fold(
+                                onSuccess = { onLoginSuccess() },
+                                onFailure = { errorMessage = it.message ?: "Login failed" }
+                            )
+                            isSubmitting = false
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DestinyAccentBlue,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        text = if (isSubmitting) "Logging in..." else "Login",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.Center
                 ) {
                     TextButton(
                         enabled = firebaseConfigured && !isSubmitting,
@@ -250,42 +278,10 @@ fun LoginScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
-                    TextButton(
-                        enabled = firebaseConfigured && !isSubmitting,
-                        onClick = {
-                            errorMessage = null
-                            successMessage = null
-                            isSubmitting = true
-                            scope.launch {
-                                val result = authLogin(loginEmail.trim(), loginPassword)
-                                result.fold(
-                                    onSuccess = { onLoginSuccess() },
-                                    onFailure = { errorMessage = it.message ?: "Login failed" }
-                                )
-                                isSubmitting = false
-                            }
-                        }
-                    ) {
-                        Text(
-                            text = if (isSubmitting) "Logging in..." else "Login",
-                            color = DestinyAccentBlue,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
                 }
             }
 
             LoginMode.CreateAccount -> {
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    label = { Text("Username") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = textFieldColors()
-                )
-                Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -317,65 +313,44 @@ fun LoginScreen(
                     },
                     colors = textFieldColors()
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = confirmPassword,
-                    onValueChange = { confirmPassword = it },
-                    label = { Text("Confirm password") },
-                    singleLine = true,
-                    visualTransformation = if (createConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    trailingIcon = {
-                        IconButton(onClick = { createConfirmPasswordVisible = !createConfirmPasswordVisible }) {
-                            Icon(
-                                imageVector = if (createConfirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (createConfirmPasswordVisible) "Hide password" else "Show password",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    colors = textFieldColors()
-                )
                 Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        enabled = firebaseConfigured && !isSubmitting,
-                        onClick = {
-                            errorMessage = null
-                            successMessage = null
-                            when {
-                                username.isBlank() -> errorMessage = "Username is required"
-                                email.isBlank() -> errorMessage = "Email is required"
-                                password.isBlank() -> errorMessage = "Password is required"
-                                password != confirmPassword -> errorMessage = "Passwords do not match"
-                                else -> {
-                                    isSubmitting = true
-                                    scope.launch {
-                                        val result = authRegister(username.trim(), email.trim(), password)
-                                        result.fold(
-                                            onSuccess = {
-                                                successMessage = "Account created. You're logged in."
-                                                onLoginSuccess()
-                                            },
-                                            onFailure = { errorMessage = it.message ?: "Registration failed" }
-                                        )
-                                        isSubmitting = false
-                                    }
+                Button(
+                    enabled = firebaseConfigured && !isSubmitting,
+                    onClick = {
+                        errorMessage = null
+                        successMessage = null
+                        when {
+                            email.isBlank() -> errorMessage = "Email is required"
+                            password.isBlank() -> errorMessage = "Password is required"
+                            else -> {
+                                isSubmitting = true
+                                scope.launch {
+                                    val result = authRegister(email.trim(), password)
+                                    result.fold(
+                                        onSuccess = {
+                                            successMessage = "Account created. You're logged in."
+                                            onLoginSuccess()
+                                        },
+                                        onFailure = { errorMessage = it.message ?: "Registration failed" }
+                                    )
+                                    isSubmitting = false
                                 }
                             }
                         }
-                    ) {
-                        Text(
-                            text = if (isSubmitting) "Creating..." else "Create account",
-                            color = DestinyAccentBlue,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DestinyAccentBlue,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        text = if (isSubmitting) "Creating..." else "Create account",
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

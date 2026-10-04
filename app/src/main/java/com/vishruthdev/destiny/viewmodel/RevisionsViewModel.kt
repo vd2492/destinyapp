@@ -81,7 +81,10 @@ class RevisionsViewModel(
                                     .thenByDescending { topic -> topic.activeDay != null }
                                     .thenBy { topic -> topic.actionableDay ?: Int.MAX_VALUE }
                             ),
-                            completionDialog = currentDialog ?: nextAutoDialog
+                            completionDialog = currentDialog ?: nextAutoDialog,
+                            // Delete mode has nothing to act on, and no Done button to leave it,
+                            // once the list is empty - so it must not outlive the last topic.
+                            deleteMode = it.deleteMode && topics.isNotEmpty()
                         )
                     }
                 }

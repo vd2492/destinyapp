@@ -55,6 +55,13 @@ fun DestinyApp(
     val currentRoute = navBackStackEntry?.destination?.route
     val scope = rememberCoroutineScope()
 
+    TutorialPromptDialog(
+        userId = authRepository?.currentUserId(),
+        onOpenTutorial = {
+            navController.navigate(Routes.Tutorial) { launchSingleTop = true }
+        }
+    )
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
@@ -107,6 +114,11 @@ fun DestinyApp(
                 SettingsScreen(
                     authRepository = authRepository,
                     settingsRepository = app.settingsRepository,
+                    onOpenTutorial = {
+                        navController.navigate(Routes.Tutorial) { launchSingleTop = true }
+                    },
+                    darkTheme = darkTheme,
+                    onThemeToggle = onThemeToggle,
                     onLogout = {
                         val repositoryForLogout = authRepository
                         if (repositoryForLogout != null) {
@@ -118,6 +130,12 @@ fun DestinyApp(
                             }
                         }
                     }
+                )
+            }
+            composable(Routes.Tutorial) {
+                TutorialScreen(
+                    onBack = { navController.popBackStack() },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
@@ -162,10 +180,14 @@ private fun DestinyBottomNav(
         tonalElevation = 0.dp
     ) {
         items.forEach { item ->
-            val selected = currentRoute == item.route
+            // The tutorial lives under Settings, so that tab stays highlighted while it is open.
+            val selected = currentRoute == item.route ||
+                (item.route == Routes.Settings && currentRoute == Routes.Tutorial)
             NavigationBarItem(
                 selected = selected,
                 onClick = {
+                    // Leave the tutorial first so a tab never restores it later.
+                    if (currentRoute == Routes.Tutorial) navController.popBackStack()
                     navController.navigate(item.route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true

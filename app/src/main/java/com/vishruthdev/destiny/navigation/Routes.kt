@@ -5,4 +5,5 @@ object Routes {
     const val Habits = "habits"
     const val Revisions = "revisions"
     const val Settings = "settings"
+    const val Tutorial = "tutorial"
 }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.vishruthdev.destiny.ui.DestinyApp
 import com.vishruthdev.destiny.ui.LoginScreen
+import com.vishruthdev.destiny.ui.ThemePreferenceStore
 import com.vishruthdev.destiny.ui.theme.DestinyTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,7 +22,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val app = LocalContext.current.applicationContext as DestinyApplication
             val currentUser by app.authRepository.currentUser.collectAsState()
-            var darkTheme by remember { mutableStateOf(true) }
+            val themeStore = remember(app) { ThemePreferenceStore(app) }
+            var darkTheme by remember { mutableStateOf(themeStore.isDarkTheme()) }
 
             DestinyTheme(darkTheme = darkTheme) {
                 if (currentUser == null) {
@@ -30,8 +32,8 @@ class MainActivity : ComponentActivity() {
                         firebaseConfigured = app.authRepository.isConfigured,
                         googleSignInConfigured = app.authRepository.isGoogleSignInConfigured,
                         googleWebClientId = app.authRepository.googleWebClientId,
-                        authRegister = { username, email, password ->
-                            app.authRepository.register(username, email, password)
+                        authRegister = { email, password ->
+                            app.authRepository.register(email, password)
                         },
                         authLogin = { email, password ->
                             app.authRepository.login(email, password)
@@ -46,7 +48,10 @@ class MainActivity : ComponentActivity() {
                 } else {
                     DestinyApp(
                         darkTheme = darkTheme,
-                        onThemeToggle = { darkTheme = !darkTheme },
+                        onThemeToggle = {
+                            darkTheme = !darkTheme
+                            themeStore.setDarkTheme(darkTheme)
+                        },
                         authRepository = app.authRepository
                     )
                 }

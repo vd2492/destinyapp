@@ -359,6 +359,18 @@ class HabitRepository(
                     inProgressDays = inProgressDays,
                     nowMillis = now
                 )
+                val todayStart = todayStartMillis(now)
+                // A day can only be started or finished on its own due date, so the day whose
+                // due date is today (if any) is the one that counts towards today's progress.
+                val dueTodayState = dayStates.firstOrNull { progress ->
+                    val dueAt = calculateRevisionDueAt(
+                        startDateMillis = topic.startDateMillis,
+                        revisionHour = topic.revisionHour,
+                        revisionMinute = topic.revisionMinute,
+                        revisionDay = progress.day
+                    )
+                    todayStartMillis(dueAt) == todayStart
+                }?.state
                 RevisionTopicWithProgress(
                     id = topic.id,
                     name = topic.name,
@@ -367,7 +379,8 @@ class HabitRepository(
                     revisionHour = topic.revisionHour,
                     revisionMinute = topic.revisionMinute,
                     alarmEnabled = topic.alarmEnabled,
-                    completionDialogDismissed = topic.completionDialogDismissed
+                    completionDialogDismissed = topic.completionDialogDismissed,
+                    dueTodayState = dueTodayState
                 )
             }
         }
@@ -869,8 +882,19 @@ data class RevisionTopicWithProgress(
     val revisionHour: Int,
     val revisionMinute: Int,
     val alarmEnabled: Boolean = true,
-    val completionDialogDismissed: Boolean = false
+    val completionDialogDismissed: Boolean = false,
+    /** State of the day whose due date is today, or null if no day falls on today. */
+    val dueTodayState: RevisionDayState? = null
 ) {
+    /** True when a day is due today and could actually be worked on (not blocked behind an earlier day). */
+    val countsTowardsToday: Boolean
+        get() = dueTodayState == RevisionDayState.Completed ||
+            dueTodayState == RevisionDayState.InProgress ||
+            dueTodayState == RevisionDayState.Active
+
+    val completedToday: Boolean
+        get() = dueTodayState == RevisionDayState.Completed
+
     val activeDay: Int?
         get() = dayStates.firstOrNull { it.state == RevisionDayState.Active }?.day
 

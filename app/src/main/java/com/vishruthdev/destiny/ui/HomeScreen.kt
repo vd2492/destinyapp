@@ -31,8 +31,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -83,22 +81,19 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             GreetingSection()
-            Switch(
-                checked = !darkTheme,
-                onCheckedChange = { onThemeToggle() },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.primary,
-                    checkedTrackColor = DestinyAccentBlue.copy(alpha = 0.5f),
-                    uncheckedThumbColor = MaterialTheme.colorScheme.surface,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
+            ThemeToggle(
+                darkTheme = darkTheme,
+                onThemeToggle = onThemeToggle
             )
         }
         Spacer(modifier = Modifier.height(24.dp))
         StatsCardsRow(
             dueRevisionsCount = state.dueRevisionsCount,
+            revisionProgressPercent = state.revisionProgressPercent,
+            showRevisionProgress = state.revisionsTodayTotal > 0,
             dueHabitsCount = state.dueHabitsCount,
-            progressPercent = state.progressPercent,
+            habitProgressPercent = state.progressPercent,
+            showHabitProgress = state.habits.isNotEmpty(),
             showAllCompletedState = state.showAllCompletedState
         )
         Spacer(modifier = Modifier.height(28.dp))
@@ -182,8 +177,11 @@ private fun GreetingSection() {
 @Composable
 private fun StatsCardsRow(
     dueRevisionsCount: Int,
+    revisionProgressPercent: Int,
+    showRevisionProgress: Boolean,
     dueHabitsCount: Int,
-    progressPercent: Int,
+    habitProgressPercent: Int,
+    showHabitProgress: Boolean,
     showAllCompletedState: Boolean = false
 ) {
     Row(
@@ -195,69 +193,86 @@ private fun StatsCardsRow(
             label = "Due Revisions",
             value = "$dueRevisionsCount",
             sublabel = null,
-            valueColor = DestinyAccentBlue
+            valueColor = DestinyAccentBlue,
+            progressPercent = if (showRevisionProgress) revisionProgressPercent else null,
+            showGreenTick = revisionProgressPercent == 100
         )
         StatCard(
             modifier = Modifier.weight(1f),
             label = "Due Habits",
             value = "$dueHabitsCount",
             sublabel = null,
-            valueColor = DestinyAccentBlue
-        )
-        ProgressStatCard(
-            modifier = Modifier.weight(1f),
-            percent = progressPercent,
+            valueColor = DestinyAccentBlue,
+            progressPercent = if (showHabitProgress) habitProgressPercent else null,
             showGreenTick = showAllCompletedState
         )
     }
 }
 
+/**
+ * A count card. When [progressPercent] is given, a progress ring sits beside the count; it is
+ * left out entirely when there is nothing due today to make progress on.
+ */
 @Composable
 private fun StatCard(
     modifier: Modifier = Modifier,
     label: String,
     value: String,
     sublabel: String?,
-    valueColor: Color
+    valueColor: Color,
+    progressPercent: Int? = null,
+    showGreenTick: Boolean = false
 ) {
     Surface(
         modifier = modifier.height(96.dp),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp
-                ),
-                color = valueColor
-            )
-            if (sublabel != null) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    text = sublabel,
+                    text = label,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                Spacer(modifier = Modifier.height(0.dp))
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp
+                    ),
+                    color = valueColor
+                )
+                if (sublabel != null) {
+                    Text(
+                        text = sublabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(0.dp))
+                }
+            }
+            if (progressPercent != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                ProgressRing(percent = progressPercent, showGreenTick = showGreenTick)
             }
         }
     }
 }
 
 @Composable
-private fun ProgressStatCard(
-    modifier: Modifier = Modifier,
+private fun ProgressRing(
     percent: Int,
     showGreenTick: Boolean = false
 ) {
@@ -267,51 +282,43 @@ private fun ProgressStatCard(
         isFullGreen -> DestinyCompletedGreen
         else -> DestinyAccentBlue
     }
-    Surface(
-        modifier = modifier.height(96.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface
+    Box(
+        modifier = Modifier.size(48.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(
-                modifier = Modifier.size(56.dp)
-            ) {
-                val strokeWidth = 4.dp.toPx()
-                val sweepAngle = (percent / 100f) * 360f
-                drawArc(
-                    color = DestinyLockedGrey,
-                    startAngle = 90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = progressColor,
-                    startAngle = 90f,
-                    sweepAngle = -sweepAngle,
-                    useCenter = false,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                )
-            }
-            if (showGreenTick) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp),
-                    tint = DestinyCompletedGreen
-                )
-            } else {
-                Text(
-                    text = "$percent%",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = progressColor
-                )
-            }
+        Canvas(modifier = Modifier.size(48.dp)) {
+            val strokeWidth = 4.dp.toPx()
+            val sweepAngle = (percent / 100f) * 360f
+            drawArc(
+                color = DestinyLockedGrey,
+                startAngle = 90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = progressColor,
+                startAngle = 90f,
+                sweepAngle = -sweepAngle,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            )
+        }
+        if (showGreenTick) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "All done",
+                modifier = Modifier.size(24.dp),
+                tint = DestinyCompletedGreen
+            )
+        } else {
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = progressColor
+            )
         }
     }
 }

@@ -43,6 +43,8 @@ data class HomeUiState(
     val dueHabitsCount: Int,
     val dueRevisionsCount: Int,
     val progressPercent: Int,
+    val revisionsTodayTotal: Int = 0,
+    val revisionProgressPercent: Int = 0,
     val dueRevisions: List<RevisionTopicWithProgress> = emptyList(),
     val hasRevisionTopics: Boolean = false,
     val showAllCompletedState: Boolean = false,
@@ -165,6 +167,8 @@ class HomeViewModel(
                     _state.update {
                         it.copy(
                             dueRevisionsCount = 0,
+                            revisionsTodayTotal = 0,
+                            revisionProgressPercent = 0,
                             dueRevisions = emptyList(),
                             hasRevisionTopics = false,
                             revisionCompletionDialog = null
@@ -198,9 +202,15 @@ class HomeViewModel(
                 } else {
                     null
                 }
+                val todayTopics = topics.filter { it.countsTowardsToday }
+                val revisionsDoneToday = todayTopics.count { it.completedToday }
+                val revisionProgressPercent = if (todayTopics.isEmpty()) 0
+                    else (revisionsDoneToday.toFloat() / todayTopics.size * 100).toInt()
                 _state.update {
                     it.copy(
                         dueRevisionsCount = dueRevisions.size,
+                        revisionsTodayTotal = todayTopics.size,
+                        revisionProgressPercent = revisionProgressPercent,
                         dueRevisions = dueRevisions,
                         hasRevisionTopics = topics.isNotEmpty(),
                         revisionCompletionDialog = currentDialog ?: nextAutoDialog

@@ -1,6 +1,9 @@
 package com.vishruthdev.destiny.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -20,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +54,9 @@ fun SettingsScreen(
     authRepository: AuthRepository?,
     settingsRepository: SettingsRepository? = null,
     onLogout: () -> Unit = {},
+    onOpenTutorial: () -> Unit = {},
+    darkTheme: Boolean = true,
+    onThemeToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentUser by (authRepository?.currentUser ?: flowOf(null)).collectAsState(initial = null)
@@ -63,11 +71,16 @@ fun SettingsScreen(
     var isDeleting by remember { mutableStateOf(false) }
     var deletePassword by remember { mutableStateOf("") }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    var showNameDialog by remember { mutableStateOf(false) }
+    var isSavingName by remember { mutableStateOf(false) }
+    var nameInput by remember { mutableStateOf("") }
+    var nameError by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
         Text(
@@ -114,6 +127,19 @@ fun SettingsScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            TextButton(
+                                onClick = {
+                                    nameError = null
+                                    nameInput = authRepository.currentDisplayName().orEmpty()
+                                    showNameDialog = true
+                                }
+                            ) {
+                                Text(
+                                    text = "Edit name",
+                                    color = DestinyAccentBlue,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                         OutlinedButton(
                             onClick = onLogout,
@@ -132,6 +158,89 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenTutorial),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                ) {
+                    Text(
+                        text = "Tutorial",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Learn how habits and revisions work, with examples.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 12.dp)
+                ) {
+                    Text(
+                        text = "Theme",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (darkTheme) "Dark theme is on. Switch to light." else "Light theme is on. Switch to dark.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                ThemeToggle(
+                    darkTheme = darkTheme,
+                    onThemeToggle = onThemeToggle
+                )
             }
         }
 
@@ -236,6 +345,73 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        if (showNameDialog && authRepository != null) {
+            AlertDialog(
+                onDismissRequest = { if (!isSavingName) showNameDialog = false },
+                title = {
+                    Text(
+                        text = "Edit name",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = nameInput,
+                            onValueChange = { nameInput = it },
+                            label = { Text("Name") },
+                            singleLine = true,
+                            enabled = !isSavingName,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        nameError?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    OutlinedButton(
+                        enabled = !isSavingName,
+                        onClick = {
+                            isSavingName = true
+                            nameError = null
+                            scope.launch {
+                                authRepository.updateDisplayName(nameInput).fold(
+                                    onSuccess = { showNameDialog = false },
+                                    onFailure = { nameError = it.message ?: "Could not update your name" }
+                                )
+                                isSavingName = false
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (isSavingName) "Saving..." else "Save",
+                            color = DestinyAccentBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !isSavingName,
+                        onClick = { showNameDialog = false }
+                    ) {
+                        Text("Cancel")
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         }
 
         if (showDeleteDialog && authRepository != null) {
