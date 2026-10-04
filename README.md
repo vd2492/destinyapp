@@ -20,19 +20,29 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - Optional Strict Mode — when enabled, skipping a revision day restarts the plan from Day 1; when off (default), missed days keep your progress
 
 **Reminders**
-- 10-minute notification before each habit/revision
-- 2-minute device alarm with alarm sound and vibration
-- Per-habit and per-revision alarm toggle (tap card to flip and configure)
+- Notification 10 minutes before each habit/revision
+- Device alarm 2 minutes before, with alarm sound and vibration
+- Per-habit and per-revision alarm toggle that turns both reminders on or off (tap the card to flip and configure)
+- Exact alarms are granted by the user (a one-time prompt and a card in Settings), so reminders arrive on time
 - Alarms persist across device reboots
 
-**Celebration**
-- All-completed celebration state when every habit is done for the day
-- Undo window with countdown timer
+**Today Dashboard**
+- Due Habits and Due Revisions cards, each with its own progress ring
+- A ring only appears when something is due today, and becomes a green tick when that list is finished
+- All-completed celebration state when every habit is done for the day, with a 10-second Undo all window
 
-**Cloud Sync**
-- Google Sign-In authentication
+**Accounts & Cloud Sync**
+- Sign up with just an email and password, or continue with Google
+- Password reset by email
+- Editable display name in Settings
+- Account deletion with re-authentication, removing the account and all of its data
 - Real-time Firestore sync across devices
 - Strict per-user security rules
+
+**Help & Personalisation**
+- Written in-app **Tutorial** (Settings → Tutorial) with step-by-step guides, examples and tips
+- One-time "New to Destiny?" prompt on first login that links to the tutorial
+- Dark / light theme switch (sun and moon icon) on the Today tab and in Settings, remembered between launches
 
 **UI**
 - Material 3 design with dark and light theme
@@ -44,10 +54,11 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 
 ### Getting Started
 
-1. **Sign in** with your Google account on the login screen
-2. You land on the **Today** tab — your daily dashboard showing today's habits and due revisions
-3. Use the bottom navigation to switch between **Today**, **Habits**, **Revisions**, and **Settings**
-4. The stat cards at the top of the **Today** tab update live as you complete habits or start/finish due revisions
+1. **Create an account** with an email and password, or tap **Sign in with Google**. Forgot your password? Enter your email on the Login tab and tap **Forgot password?**
+2. A first-time prompt offers the **Tutorial**. Tap **Open tutorial**, or **Maybe later** (it is always under **Settings → Tutorial**)
+3. You land on the **Today** tab — your daily dashboard showing today's habits and due revisions
+4. Use the bottom navigation to switch between **Today**, **Habits**, **Revisions**, and **Settings**
+5. The cards at the top of the **Today** tab update live as you complete habits or start/finish due revisions. Each has a progress ring while something is due today
 
 ### Habit Tracking
 
@@ -63,15 +74,20 @@ Destiny combines habit tracking with a 1-2-4-7 spaced revision system to help yo
 - **Tap once** on a habit to mark it **In Progress** (orange dot) — an "In progress" label appears below the name
 - **Tap again** to mark it **Completed** (green checkmark)
 - **Tap a third time** to reset it back to **Not Started**
-- When all habits are completed, a celebration message appears with an undo option (10-second countdown)
+- When **every** habit for today is completed, the list is replaced by a celebration banner with an **Undo all** option (10-second countdown)
 
 **Strict Mode (auto-reset on miss):**
 - Controlled by the **Strict Mode** toggle in the **Settings** tab (off by default)
 - When **on**: if you miss a day (don't complete a habit), it automatically restarts from Day 1 the next day — your streak resets to 0 and completion history clears, enforcing an unbroken chain
 - When **off**: missed days no longer reset anything; your habits and revision topics keep their start date and history, so an absence (e.g. not opening the app for a while) won't wipe your progress
+- The same switch controls revision topics
+
+**Deleting a habit:**
+- On the **Habits** tab tap **Remove habit** (or long-press any card), tap the **✕** on the habit, then **Done**
+- Deletion is immediate and permanent, with no confirmation or undo
 
 **Tracking progress:**
-- Each habit card in the Habits tab shows your **current streak** and **30-day completion rate**
+- Each habit card in the Habits tab shows your **current streak**, your **completion rate** and a red tag such as "Missed yesterday" if you skipped a day
 - When a habit reaches a **30-day streak**, a popup lets you **restart**, **delete**, or **continue** the streak
 - If you dismiss that popup, the habit keeps going and you can reopen the same options from the flipped card via **Edit options**
 
@@ -94,7 +110,8 @@ The 1-2-4-7 method is a spaced repetition technique: after learning something, y
 - Tap **Mark Day X done** to complete it (moves to Completed, unlocks the next day)
 - After finishing the full **Day 1, 2, 4, 7** cycle, a popup lets you **restart** or **delete** the topic
 - If you dismiss that popup, the topic stays completed and you can reopen the same options from the flipped card via **Edit options**
-- If you miss any revision day, the topic automatically restarts from **Day 1** on the current day
+- With **Strict Mode** on, missing a revision day restarts the topic from **Day 1** on the current day. With it off (the default), your progress is kept
+- To delete a topic: **Remove topic** (or long-press a card), tap the **✕**, then **Done**. This is immediate and permanent
 
 ### Reminders & Alarms
 
@@ -102,25 +119,32 @@ Every habit and revision gets two reminders by default:
 - **10 minutes before** — a notification appears as a heads-up
 - **2 minutes before** — a device alarm rings with sound and vibration
 
+For the alarm to fire at the exact time, allow **Alarms & reminders** when prompted (or later from the card in **Settings**). Notifications need the notification permission on Android 13+.
+
 **Toggling alarms:**
 - In the **Habits** or **Revisions** tab, **tap any card** to flip it
-- The back of the card shows an alarm toggle switch
+- The back of the card shows the **Alarm (2 min before)** switch, which controls both reminders
 - Completed 30-day habits and fully completed revision topics also show an **Edit options** button on the back
-- Turn it off to disable reminders for that specific habit/revision
+- Turn it off to disable both reminders for that specific habit/revision
 - Tap the card again to flip back
 
 ### Settings
 
-- The **Settings** tab shows the signed-in account details
-- The bottom-left corner displays the current app version, starting at **Version 1.0**
+- **Account:** shows who is signed in, with **Edit name** and **Logout**
+- **Tutorial:** opens the written guide to the app
+- **Theme:** switch between dark and light (also available on the Today tab)
+- **Strict Mode:** see above
+- **Alarms & reminders:** a card appears if exact alarm access has not been granted
+- **Delete account:** permanently removes your account and all data after you confirm with your password or Google
+- The bottom-left corner shows the current app version
 
 ### Tips for Efficient Use
 
 - **Morning routine:** Open the Today tab each morning to see what's due — habits on top, revisions below
-- **Never break the chain:** Missing a single day resets your habit to Day 1 — complete every day to keep your streak alive
+- **Never break the chain:** A missed day breaks your streak. With Strict Mode on it also resets the habit to Day 1, so complete every day to keep it alive
 - **Use In Progress:** Mark habits as "In Progress" when you start them, then complete when done — this helps you track what you're actively working on
-- **Stay consistent with revisions:** Missing any scheduled revision day restarts the 1-2-4-7 plan from Day 1 on the current day
-- **Set realistic times:** Schedule habits at times you'll actually do them — the 10-min + 2-min alarm combo ensures you won't forget
+- **Stay consistent with revisions:** Later days stay locked until the earlier ones are done. With Strict Mode on, a missed day restarts the plan from Day 1
+- **Set realistic times:** Schedule habits at times you'll actually do them — the 10-min notification and 2-min alarm ensure you won't forget
 - **Review the Habits tab weekly:** Check your streaks and completion rates to see which habits need more attention
 
 ## Tech Stack
@@ -133,7 +157,7 @@ Every habit and revision gets two reminders by default:
 | State | StateFlow / MutableStateFlow |
 | Auth | Firebase Auth + Credential Manager |
 | Database | Cloud Firestore (real-time) |
-| Notifications | FCM + local AlarmManager |
+| Notifications | FCM (Cloud Functions) + local AlarmManager |
 | Build | Gradle 8.13, KSP |
 | Min SDK | 24 (Android 7.0) |
 | Target SDK | 36 |
@@ -144,7 +168,8 @@ Every habit and revision gets two reminders by default:
 com.vishruthdev.destiny
 ├── data/
 │   ├── HabitRepository.kt          # Habits + revisions business logic
-│   └── AuthRepository.kt           # Auth & user profiles
+│   ├── AuthRepository.kt           # Auth, user profiles, display name, account deletion
+│   └── SettingsRepository.kt       # Per-account preferences (Strict Mode)
 ├── viewmodel/
 │   ├── HomeViewModel.kt            # Today screen state
 │   ├── HabitsViewModel.kt          # Habits screen state
@@ -153,8 +178,12 @@ com.vishruthdev.destiny
 │   ├── HomeScreen.kt               # Daily overview
 │   ├── HabitsScreen.kt             # Habit management + flip cards
 │   ├── RevisionsScreen.kt          # Revision management + flip cards
-│   ├── SettingsScreen.kt           # Settings & logout
-│   ├── LoginScreen.kt              # Authentication
+│   ├── SettingsScreen.kt           # Settings, edit name, theme, delete account
+│   ├── TutorialScreen.kt           # Written in-app guide
+│   ├── TutorialPromptDialog.kt     # One-time first-login prompt
+│   ├── ThemeToggle.kt              # Sun/moon theme switch
+│   ├── ThemePreferenceStore.kt     # Remembers the chosen theme
+│   ├── LoginScreen.kt              # Sign up, login, Google, password reset
 │   └── theme/                      # Colors, typography, theme
 ├── reminder/
 │   ├── ReminderScheduler.kt        # Dual-stage alarm scheduling
@@ -166,11 +195,14 @@ com.vishruthdev.destiny
 │   └── PushTokenSyncManager.kt
 ├── DestinyApplication.kt           # App initialization
 └── MainActivity.kt                 # Entry point
+
+functions/                          # Cloud Functions that send reminder pushes
+docs/                               # Setup guides + public privacy and deletion pages
 ```
 
 ## Firebase Setup
 
-This project uses Firebase for authentication and data sync. See the setup guides:
+This project uses Firebase for authentication and data sync. Sign-in with Email/Password and Google must both be enabled. Google sign-in on a Play Store build also needs the **Play app signing key** SHA-1 added to the Firebase Android app, alongside your upload key and debug key. See the setup guides:
 
 - [Firebase Setup](docs/FIREBASE_SETUP.md)
 - [Google Sign-In Setup](docs/GOOGLE_SIGNIN_SETUP.md)
@@ -178,7 +210,8 @@ This project uses Firebase for authentication and data sync. See the setup guide
 ## Firestore Schema
 
 ```
-users/{uid}
+users/{uid}                          # uid, email, displayName, created/updated timestamps
+├── settings/app                     # strictModeEnabled
 ├── habits/{habitId}
 │   ├── name, startDateMillis, startHour, startMinute
 │   ├── completionDates[], inProgressDates[]
@@ -195,13 +228,29 @@ users/{uid}
 ```bash
 git clone https://github.com/vd2492/destinyapp.git
 cd destinyapp
-# Add local.properties with Firebase credentials (see above)
+# Add local.properties with Firebase credentials (see docs/FIREBASE_SETUP.md)
 ./gradlew assembleDebug
+```
+
+**Release build (Google Play):**
+
+```bash
+cp keystore.properties.example keystore.properties   # fill in your keystore details
+./gradlew bundleRelease
+# Output: app/build/outputs/bundle/release/app-release.aab
+```
+
+Bump `versionCode` in `app/build.gradle.kts` for every upload.
+
+**Checks:**
+
+```bash
+./gradlew testDebugUnitTest lintDebug
 ```
 
 ## Permissions
 
 - `INTERNET` — Cloud sync
 - `POST_NOTIFICATIONS` — Reminder notifications (Android 13+)
-- `USE_EXACT_ALARM` — Device alarms
+- `SCHEDULE_EXACT_ALARM` — Exact device alarms (granted by the user)
 - `RECEIVE_BOOT_COMPLETED` — Reschedule alarms after reboot

@@ -135,7 +135,7 @@ fun TutorialScreen(
             TutorialSteps(
                 "Open the **Habits** tab.",
                 "**Tap the habit's card.** It flips over.",
-                "Use the **Alarm (2 min before)** switch. On sends a reminder 2 minutes before your habit time. Off sends none.",
+                "Use the **Alarm (2 min before)** switch. **On** gives you a notification **10 minutes** before your habit time and an alarm **2 minutes** before. **Off** turns both off for that habit.",
                 "Tap the card again to flip it back."
             )
             AlarmSwitchPreview()
@@ -195,7 +195,7 @@ fun TutorialScreen(
             TutorialSteps(
                 "Open the **Revisions** tab.",
                 "**Tap the topic's card.** It flips over.",
-                "Use the **Alarm (2 min before)** switch to turn its reminder on or off.",
+                "Use the **Alarm (2 min before)** switch. **On** gives you a notification **10 minutes** before and an alarm **2 minutes** before. **Off** turns both off for that topic.",
                 "Tap the card again to flip it back."
             )
             AlarmSwitchPreview()
@@ -220,8 +220,11 @@ fun TutorialScreen(
 
         TutorialSection(title = "Today tab") {
             TutorialText(
-                "Your daily home screen. **Due Revisions** and **Due Habits** show what is left to do, " +
-                    "and the ring shows how much of today's habits you have finished. " +
+                "Your daily home screen. **Due Revisions** and **Due Habits** show what is left to do today.",
+            )
+            TutorialText(
+                "Each card has its own **progress ring** showing how much of that list you have finished today. " +
+                    "A ring only appears when something is due today, and it turns into a **green tick** when everything on that card is done. " +
                     "Tap **View All >** to open the full Habits or Revisions list."
             )
         }
@@ -235,15 +238,27 @@ fun TutorialScreen(
 
         TutorialSection(title = "Reminders") {
             TutorialText(
-                "Allow **notifications** when asked so reminders can reach you. In Settings you can also allow " +
-                    "**Alarms & reminders** so they arrive exactly on time instead of a few minutes late."
+                "Every habit and revision gets a **notification 10 minutes before** and an **alarm 2 minutes before** its time. " +
+                    "Allow **notifications** when asked so they can reach you. In Settings you can also allow " +
+                    "**Alarms & reminders** so they arrive exactly on time instead of a few minutes late. " +
+                    "Reminders are set again automatically after your phone restarts."
+            )
+        }
+
+        TutorialSection(title = "Settings") {
+            TutorialBullets(
+                "**Edit name.** Change the name shown on your account.",
+                "**Theme.** Switch between dark and light. The sun and moon on the switch show which is on, and your choice is remembered.",
+                "**Strict Mode.** Described above. Off by default.",
+                "**Alarms & reminders.** If it appears, allow it so reminders arrive exactly on time.",
+                "**Delete account.** Permanently removes your account and all of your data. You will be asked to confirm with your password or Google first."
             )
         }
 
         TutorialSection(title = "Tips for using Destiny well") {
             TutorialBullets(
                 "**Start small.** Two or three habits you can keep beat ten you can't.",
-                "**Set the time you really do it.** The reminder arrives 2 minutes before, so it lands at the right moment.",
+                "**Set the time you really do it.** You get a heads-up 10 minutes before and an alarm 2 minutes before, so both land at the right moment.",
                 "**Tap the circle when you begin, and again when you finish.** In progress shows what is still pending.",
                 "**Add a revision topic the day you study it.** Starting Today makes Day 1 today.",
                 "**Never skip a revision day if you can help it.** Later days stay locked until you complete the earlier ones.",
